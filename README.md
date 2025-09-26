@@ -10,8 +10,6 @@
 
 🎤 **Like Hey Siri, but actually useful for your Mac.** The voice assistant that gets things done. Completely private, lightning fast, works in 99+ languages.
 
-📚 **[Complete Documentation](https://github.com/Unseenium/unseenium-docs/tree/main/projects/hey-mike)** - PRDs, roadmap, market analysis, and strategic planning.
-
 ## ✨ What Makes Hey Mike! Amazing
 
 - **🎯 Just Works**: Press a hotkey, speak, and watch text appear exactly where you need it
@@ -215,6 +213,5 @@ See [LICENSE](LICENSE) file for details.
 ## Links
 
 - 🏢 **Organization**: [Unseenium](https://github.com/Unseenium)
-- 📚 **Documentation**: [Unseenium Docs](https://github.com/Unseenium/unseenium-docs) - PRDs, roadmap, market analysis
 - 🌐 **Website**: [unseenium.com](https://unseenium.com)
 - 📦 **Repository**: [github.com/Unseenium/HeyMike](https://github.com/Unseenium/HeyMike)
