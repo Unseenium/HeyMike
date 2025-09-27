@@ -20,6 +20,13 @@ from HotkeyManager import HotkeyManager
 from TextInsertionManager import TextInsertionManager
 from AppSettings import AppSettings
 
+# v2.0 imports
+from MLXLLMManager import MLXLLMManager
+from WakeWordDetector import WakeWordDetector
+from CommandProcessor import CommandProcessor
+from ActionExecutor import ActionExecutor
+from Security.CommandValidator import CommandValidator
+
 class HeyMikeApp(rumps.App):
     """Main Hey Mike! application with menu bar interface"""
     
@@ -48,17 +55,29 @@ class HeyMikeApp(rumps.App):
         # Set up logging
         self.logger = logging.getLogger(__name__)
         
-        # Initialize managers
+        # Initialize v1.0 managers
         self.whisper_manager = MLXWhisperManager()
         self.audio_manager = AudioManager()
         self.hotkey_manager = HotkeyManager()
         self.text_manager = TextInsertionManager()
         self.settings = AppSettings()
         
+        # Initialize v2.0 managers
+        self.llm_manager = MLXLLMManager()
+        self.wake_word_detector = WakeWordDetector()
+        self.command_processor = CommandProcessor()
+        self.action_executor = ActionExecutor()
+        self.command_validator = CommandValidator()
+        
         # Application state
         self.is_recording = False
         self.is_processing = False
         self.current_model = 'tiny'  # Default, will be updated from settings
+        
+        # v2.0 state
+        self.command_mode_enabled = True
+        self.current_llm_model = 'llama-3.2-1b'
+        self.is_command_mode = False  # Current mode: False=dictation, True=command
         
         # Setup callbacks
         self._setup_callbacks()
@@ -93,29 +112,74 @@ class HeyMikeApp(rumps.App):
         self.whisper_manager.on_transcription_start = self._on_transcription_start
         self.whisper_manager.on_transcription_complete = self._on_transcription_complete
         
-        # Error callbacks
+        # v2.0 LLM callbacks
+        self.llm_manager.on_model_loading = self._on_llm_model_loading
+        self.llm_manager.on_model_loaded = self._on_llm_model_loaded
+        self.llm_manager.on_command_processing = self._on_command_processing
+        self.llm_manager.on_command_processed = self._on_command_processed
+        
+        # v2.0 Wake word callbacks
+        self.wake_word_detector.on_wake_word_detected = self._on_wake_word_detected
+        
+        # v2.0 Command execution callbacks
+        self.action_executor.on_execution_started = self._on_execution_started
+        self.action_executor.on_execution_completed = self._on_execution_completed
+        self.action_executor.on_execution_failed = self._on_execution_failed
+        self.action_executor.on_confirmation_required = self._on_confirmation_required
+        
+        # Error callbacks (v1.0 + v2.0)
         self.audio_manager.on_error = self._on_error
         self.whisper_manager.on_error = self._on_error
         self.hotkey_manager.on_error = self._on_error
         self.text_manager.on_error = self._on_error
+        self.llm_manager.on_error = self._on_error
     
     def _load_settings_early(self):
         """Load settings early to get current model before menu setup"""
         try:
             self.settings.load_settings()
             self.current_model = self.settings.get('model', 'tiny')
-            self.logger.debug(f"Loaded current model from settings: {self.current_model}")
+            
+            # Load v2.0 settings
+            self.command_mode_enabled = self.settings.get('command_mode_enabled', True)
+            self.current_llm_model = self.settings.get('llm_model', 'llama-3.2-1b')
+            
+            # Configure wake word detector
+            confidence_threshold = self.settings.get('wake_word_confidence', 0.7)
+            self.wake_word_detector.set_confidence_threshold(confidence_threshold)
+            
+            # Configure command validator permissions
+            self.command_validator.set_user_permission('restricted_commands', 
+                                                     self.settings.get('restricted_commands_enabled', False))
+            self.command_validator.set_user_permission('terminal_access', 
+                                                     self.settings.get('terminal_access', True))
+            self.command_validator.set_user_permission('file_deletions', 
+                                                     self.settings.get('file_deletions', True))
+            self.command_validator.set_user_permission('system_modifications', 
+                                                     self.settings.get('system_modifications', False))
+            
+            self.logger.debug(f"Loaded settings - Whisper: {self.current_model}, LLM: {self.current_llm_model}, Commands: {self.command_mode_enabled}")
         except Exception as e:
             self.logger.warning(f"Could not load settings early: {str(e)}")
             self.current_model = 'tiny'  # Fallback
+            self.current_llm_model = 'llama-3.2-1b'  # Fallback
     
     def _setup_menu(self):
         """Setup the menu bar menu"""
         
         # Status section with better formatting
-        self.status_item = rumps.MenuItem("🎤 Ready", callback=None)
+        mode_indicator = "🧠" if self.command_mode_enabled else "🎤"
+        mode_text = "Command Mode" if self.command_mode_enabled else "Dictation Mode"
+        self.status_item = rumps.MenuItem(f"{mode_indicator} Ready - {mode_text}", callback=None)
         self.menu.add(self.status_item)
         self.menu.add(rumps.separator)
+        
+        # Mode toggle (v2.0)
+        if self.command_mode_enabled:
+            self.mode_toggle_item = rumps.MenuItem("🎤 Switch to Dictation Only", callback=self._toggle_command_mode)
+        else:
+            self.mode_toggle_item = rumps.MenuItem("🧠 Enable Voice Commands", callback=self._toggle_command_mode)
+        self.menu.add(self.mode_toggle_item)
         
         # Quick actions section
         self.record_item = rumps.MenuItem("🔴 Start Recording", callback=self._menu_toggle_recording)
@@ -161,6 +225,38 @@ class HeyMikeApp(rumps.App):
         self.model_menu.add(self.predownload_item)
         
         self.menu.add(self.model_menu)
+        
+        # v2.0 LLM Models menu
+        if self.command_mode_enabled:
+            self.llm_menu = rumps.MenuItem("🧠 LLM Models")
+            
+            # Current LLM model display
+            current_llm_info = self.llm_manager.get_available_models().get(self.current_llm_model, {})
+            llm_display = f"📊 Current: {self.current_llm_model.title()} ({current_llm_info.get('size', 'unknown')})"
+            self.current_llm_item = rumps.MenuItem(llm_display, callback=None)
+            self.llm_menu.add(self.current_llm_item)
+            self.llm_menu.add(rumps.separator)
+            
+            # Individual LLM model items
+            self.llm_items_map = {}
+            for model_name, info in self.llm_manager.get_available_models().items():
+                icon = "✅" if model_name == self.current_llm_model else "⚪"
+                
+                def make_llm_callback(model):
+                    def callback(sender):
+                        self._select_llm_model(model)
+                    return callback
+                
+                llm_item = rumps.MenuItem(
+                    f"{icon} {model_name.title()} - {info['size']} ({info['capability']})",
+                    callback=make_llm_callback(model_name)
+                )
+                
+                self.llm_menu.add(llm_item)
+                self.llm_items_map[model_name] = llm_item
+            
+            self.menu.add(self.llm_menu)
+        
         self.menu.add(rumps.separator)
         
         # Settings section with icons
@@ -215,8 +311,15 @@ class HeyMikeApp(rumps.App):
             # Start hotkey listener
             self.hotkey_manager.start_listening()
             
-            # Load initial model asynchronously
+            # Load initial Whisper model asynchronously
             self.whisper_manager.load_model_async(self.current_model)
+            
+            # Load LLM model if command mode is enabled
+            if self.command_mode_enabled:
+                self.llm_manager.load_model_async(self.current_llm_model)
+                
+                # Load action modules
+                self.action_executor.load_action_modules()
             
             # Menu already created with correct model selected - no need to update during init
             self.logger.debug(f"Menu created with current model: {self.current_model}")
@@ -319,7 +422,7 @@ class HeyMikeApp(rumps.App):
             self.record_item.title = "Start Recording"
     
     def _process_audio(self, audio_data):
-        """Process recorded audio through Whisper"""
+        """Process recorded audio through Whisper and handle both dictation and command modes"""
         self.is_processing = True
         self._update_status("Processing...")
         self._update_menu_icon("⏳")
@@ -328,25 +431,117 @@ class HeyMikeApp(rumps.App):
         language = self.settings.get('language', None)
         
         # Process asynchronously
-        def process_callback(result):
+        def process_callback(transcribed_text):
             self.is_processing = False
             self._update_menu_icon("🎤")
-            self.record_item.title = "Start Recording"
+            self.record_item.title = "🔴 Start Recording"
             
-            if result:
-                # Insert text
-                success = self.text_manager.insert_text(result)
-                if success:
-                    self._update_status(f"Inserted: {result[:30]}...")
-                    self._show_notification("Text Inserted", result[:50] + ("..." if len(result) > 50 else ""))
+            if transcribed_text:
+                self.logger.info(f"Transcribed: {transcribed_text}")
+                
+                # Check if command mode is enabled and if this looks like a command
+                if self.command_mode_enabled and self.wake_word_detector.is_command_mode_text(transcribed_text):
+                    self._handle_voice_command(transcribed_text)
                 else:
-                    self._update_status("Insertion failed")
-                    self._show_notification("Error", "Failed to insert text")
+                    self._handle_dictation(transcribed_text)
             else:
                 self._update_status("Transcription failed")
                 self._show_notification("Error", "Transcription failed")
         
         self.whisper_manager.transcribe_audio_async(audio_data, language, process_callback)
+    
+    def _handle_dictation(self, text: str):
+        """Handle dictation mode - insert text directly"""
+        success = self.text_manager.insert_text(text)
+        if success:
+            self._update_status(f"Inserted: {text[:30]}...")
+            self._show_notification("Text Inserted", text[:50] + ("..." if len(text) > 50 else ""))
+        else:
+            self._update_status("Insertion failed")
+            self._show_notification("Error", "Failed to insert text")
+    
+    def _handle_voice_command(self, text: str):
+        """Handle command mode - process voice command"""
+        self.is_command_mode = True
+        self._update_status("Processing command...")
+        self._update_menu_icon("🧠")
+        
+        # Extract command from wake word text
+        command_text = self.wake_word_detector.extract_command_from_text(text)
+        
+        if not command_text:
+            self._update_status("No command found")
+            self._show_notification("Command Error", "No command found after wake word")
+            self.is_command_mode = False
+            return
+        
+        self.logger.info(f"Processing voice command: {command_text}")
+        
+        # Process command asynchronously
+        def command_callback(command_data):
+            if command_data:
+                self._execute_voice_command(command_data)
+            else:
+                self._update_status("Command interpretation failed")
+                self._show_notification("Command Error", "Could not understand command")
+                self.is_command_mode = False
+        
+        self.llm_manager.interpret_command_async(command_text, command_callback)
+    
+    def _execute_voice_command(self, command_data: dict):
+        """Execute a processed voice command"""
+        try:
+            # Validate command
+            validation_result, validation_message = self.command_validator.validate_command(command_data)
+            
+            from Security.CommandValidator import ValidationResult
+            
+            if validation_result == ValidationResult.REJECTED:
+                self._update_status("Command rejected")
+                self._show_notification("Command Rejected", validation_message)
+                self.is_command_mode = False
+                return
+            
+            elif validation_result == ValidationResult.REQUIRES_CONFIRMATION:
+                # Show confirmation dialog
+                response = rumps.alert(
+                    title="Confirm Command",
+                    message=f"Execute this command?\n\n{command_data.get('description', 'Unknown command')}\n\nReason: {validation_message}",
+                    ok="✅ Execute",
+                    cancel="❌ Cancel"
+                )
+                
+                if response != 1:  # User cancelled
+                    self._update_status("Command cancelled")
+                    self._show_notification("Command Cancelled", "User cancelled command execution")
+                    self.is_command_mode = False
+                    return
+            
+            # Process command
+            processed_command = self.command_processor.process_command(command_data)
+            
+            if not processed_command:
+                self._update_status("Command processing failed")
+                self._show_notification("Command Error", "Failed to process command")
+                self.is_command_mode = False
+                return
+            
+            # Execute command
+            execution_id = self.action_executor.execute_command(processed_command)
+            
+            if execution_id:
+                self._update_status(f"Executing: {processed_command.get('description', 'command')}")
+                self._show_notification("Executing Command", processed_command.get('description', 'Unknown command'))
+            else:
+                self._update_status("Command execution failed")
+                self._show_notification("Command Error", "Failed to execute command")
+                self.is_command_mode = False
+        
+        except Exception as e:
+            self.logger.error(f"Voice command execution error: {str(e)}")
+            self._update_status("Command error")
+            self._show_notification("Command Error", f"Error: {str(e)}")
+            self.is_command_mode = False
     
     def _select_model(self, model_name: str):
         """Select a different Whisper model"""
@@ -791,12 +986,141 @@ class HeyMikeApp(rumps.App):
         self.logger.error(f"Error: {error_message}")
         self._show_notification("Error", error_message)
     
+    # v2.0 Callback methods
+    
+    def _on_llm_model_loading(self, model_name: str):
+        """Called when LLM model starts loading"""
+        self._update_status(f"Loading {model_name} LLM...")
+        self._update_menu_icon("⏳")
+    
+    def _on_llm_model_loaded(self, model_name: str):
+        """Called when LLM model finishes loading"""
+        self._update_status("Ready")
+        self._update_menu_icon("🧠" if self.command_mode_enabled else "🎤")
+        self._show_notification("LLM Model Loaded", f"{model_name.title()} model ready for commands")
+    
+    def _on_command_processing(self):
+        """Called when command processing starts"""
+        self._update_status("Interpreting command...")
+    
+    def _on_command_processed(self, command_data: dict):
+        """Called when command processing completes"""
+        self.logger.info(f"Command processed: {command_data.get('description', 'Unknown')}")
+    
+    def _on_wake_word_detected(self, text: str, confidence: float, command: str):
+        """Called when wake word is detected"""
+        self.logger.info(f"Wake word detected (confidence: {confidence:.2f}): {command}")
+    
+    def _on_execution_started(self, execution_id: str, command_data: dict):
+        """Called when command execution starts"""
+        self.logger.info(f"Execution started: {execution_id}")
+    
+    def _on_execution_completed(self, execution_id: str, success: bool, message: str):
+        """Called when command execution completes"""
+        self.is_command_mode = False
+        if success:
+            self._update_status("Command completed")
+            self._show_notification("Command Completed", message)
+        else:
+            self._update_status("Command failed")
+            self._show_notification("Command Failed", message)
+    
+    def _on_execution_failed(self, execution_id: str, error_message: str):
+        """Called when command execution fails"""
+        self.is_command_mode = False
+        self._update_status("Command failed")
+        self._show_notification("Command Failed", error_message)
+    
+    def _on_confirmation_required(self, command_data: dict):
+        """Called when command requires confirmation"""
+        self.logger.info(f"Confirmation required for: {command_data.get('description', 'Unknown command')}")
+    
+    # v2.0 Menu functions
+    
+    def _toggle_command_mode(self, sender):
+        """Toggle between dictation and command mode"""
+        self.command_mode_enabled = not self.command_mode_enabled
+        self.settings.set('command_mode_enabled', self.command_mode_enabled)
+        self.settings.save_settings()
+        
+        # Update menu
+        if self.command_mode_enabled:
+            self.mode_toggle_item.title = "🎤 Switch to Dictation Only"
+            self._update_menu_icon("🧠")
+            self._show_notification("Command Mode Enabled", "Voice commands are now active")
+            
+            # Load LLM model if not already loaded
+            if not self.llm_manager.is_model_loaded():
+                self.llm_manager.load_model_async(self.current_llm_model)
+            
+            # Load action modules
+            self.action_executor.load_action_modules()
+        else:
+            self.mode_toggle_item.title = "🧠 Enable Voice Commands"
+            self._update_menu_icon("🎤")
+            self._show_notification("Dictation Mode", "Voice commands disabled, dictation only")
+        
+        # Update status
+        mode_text = "Command Mode" if self.command_mode_enabled else "Dictation Mode"
+        mode_indicator = "🧠" if self.command_mode_enabled else "🎤"
+        self.status_item.title = f"{mode_indicator} Ready - {mode_text}"
+    
+    def _select_llm_model(self, model_name: str):
+        """Select a different LLM model"""
+        self.logger.info(f"Switching LLM model from {self.current_llm_model} to {model_name}")
+        
+        if model_name == self.current_llm_model:
+            self.logger.info(f"LLM model {model_name} is already selected")
+            return
+        
+        # Update current model
+        self.current_llm_model = model_name
+        self.settings.set('llm_model', model_name)
+        self.settings.save_settings()
+        
+        # Update menu visuals
+        self._update_llm_menu_display()
+        
+        # Update current model display
+        if hasattr(self, 'current_llm_item'):
+            current_llm_info = self.llm_manager.get_available_models().get(model_name, {})
+            llm_display = f"📊 Current: {model_name.title()} ({current_llm_info.get('size', 'unknown')})"
+            self.current_llm_item.title = llm_display
+        
+        # Load new model
+        self.llm_manager.load_model_async(model_name)
+        
+        # Show notification
+        self._show_notification("LLM Model Changed", f"Switched to {model_name.title()} model")
+    
+    def _update_llm_menu_display(self):
+        """Update the visual display of LLM menu items"""
+        try:
+            if not hasattr(self, 'llm_items_map') or not self.llm_items_map:
+                return
+            
+            for model_name, menu_item in self.llm_items_map.items():
+                if menu_item and hasattr(menu_item, 'title'):
+                    icon = "✅" if model_name == self.current_llm_model else "⚪"
+                    model_info = self.llm_manager.get_available_models().get(model_name, {})
+                    new_title = f"{icon} {model_name.title()} - {model_info.get('size', 'unknown')} ({model_info.get('capability', 'unknown')})"
+                    menu_item.title = new_title
+        
+        except Exception as e:
+            self.logger.debug(f"LLM menu update skipped: {e}")
+    
     def _cleanup(self):
         """Clean up resources"""
         try:
+            # v1.0 cleanup
             self.hotkey_manager.cleanup()
             self.audio_manager.cleanup()
             self.whisper_manager.unload_model()
+            
+            # v2.0 cleanup
+            if hasattr(self, 'llm_manager'):
+                self.llm_manager.unload_model()
+            
             self.logger.info("Cleanup completed")
         except Exception as e:
             self.logger.error(f"Error during cleanup: {str(e)}")

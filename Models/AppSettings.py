@@ -23,6 +23,7 @@ class AppSettings:
         
         # Default settings
         self.default_settings = {
+            # v1.0 settings
             'model': 'tiny',
             'language': None,  # Auto-detect
             'hotkey': 'cmd+shift+space',
@@ -35,7 +36,22 @@ class AppSettings:
             'add_space_before': False,
             'audio_feedback': True,
             'notifications': True,
-            'first_run': True
+            'first_run': True,
+            
+            # v2.0 settings - Voice Commands
+            'command_mode_enabled': True,
+            'llm_model': 'llama-3.2-1b',
+            'wake_word_confidence': 0.7,
+            'command_confirmation_required': True,
+            'restricted_commands_enabled': False,
+            'always_listening': False,
+            'command_timeout': 30.0,
+            
+            # v2.0 permissions
+            'terminal_access': True,
+            'file_deletions': True,
+            'system_modifications': False,
+            'network_access': True,
         }
         
         # Current settings
