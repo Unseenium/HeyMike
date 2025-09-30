@@ -1,7 +1,7 @@
 # Hey Mike!
 
 [![GitHub](https://img.shields.io/badge/GitHub-Unseenium%2FHeyMike-blue.svg)](https://github.com/Unseenium/HeyMike)
-[![Version](https://img.shields.io/badge/Version-1.5-brightgreen.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/Version-2.0-brightgreen.svg)](CHANGELOG.md)
 [![macOS](https://img.shields.io/badge/macOS-12.0+-blue.svg)](https://developer.apple.com/macos/)
 [![Python](https://img.shields.io/badge/Python-3.8+-green.svg)](https://www.python.org/)
 [![Apple Silicon](https://img.shields.io/badge/Apple%20Silicon-M1%2FM2%2FM3-orange.svg)](https://en.wikipedia.org/wiki/Apple_silicon)
@@ -11,7 +11,7 @@
 
 🎤 **Voice dictation that actually makes sense.** Multi-mode AI transcription that's completely private, lightning fast, and works in 99+ languages.
 
-> **🆕 v1.5 Released (Sept 2025)**: Smart Mode with AI text enhancement, 5-minute recordings, and critical bug fixes! See [CHANGELOG](CHANGELOG.md).
+> **🚀 v2.0 Released (Sept 2025)**: VS Code Integration + Hybrid Architecture! Auto-start backend, live status bar, and seamless voice coding in VS Code. See [CHANGELOG](CHANGELOG.md).
 
 ## ✨ What Makes Hey Mike! Amazing
 
@@ -25,6 +25,46 @@
 - **🧠 Smart Models**: Choose from 5 Whisper models + 3 LLM models + 4 enhancement styles
 - **📱 Native macOS**: Works with any app - TextEdit, Slack, Email, IDE, Terminal
 - **🎯 Precision**: >98% accuracy that gets better the more you use it
+
+## 🚀 What's New in v2.0 (Sept 2025)
+
+### 🔌 VS Code Integration
+- **Full VS Code Extension** - Deep integration with VS Code for seamless voice coding
+- **Auto-Start Backend** - Extension automatically starts Python backend if not running
+- **Live Status Bar** - See recording/processing status with animations (🔴 Recording, ⠋ Processing)
+- **Quick Pick Menu** - Fast access to commands and settings (click status bar icon)
+- **Settings Sync** - Configure models and settings directly in VS Code
+
+### 🌉 Hybrid Architecture
+- **Dual UI System** - macOS menu bar + VS Code status bar (synchronized!)
+- **Standalone Mode** - Backend still works independently without VS Code
+- **WebSocket Bridge** - Real-time communication on port 8765
+- **Process Monitoring** - Backend logs visible in VS Code Debug Console
+- **Smart Reconnection** - Handles backend crashes and restarts gracefully
+
+### 🎯 Enhanced Features
+- **7 VS Code Commands** - Start recording, explain code, search, switch modes, settings
+- **12 Configuration Options** - Full control over backend, models, and behavior
+- **Backend API** - HTTP REST API for settings and LLM requests
+- **State Synchronization** - Recording, processing, and mode changes broadcast everywhere
+
+### 📦 Installation (VS Code)
+```bash
+# 1. Install Python backend dependencies
+cd HeyMike
+pip install -r requirements.txt
+
+# 2. Open VS Code extension folder
+cd vscode-extension
+code .
+
+# 3. Press F5 to test (auto-starts backend!)
+# Or: Install from VSIX (coming soon)
+```
+
+**[See full v2.0 docs →](vscode-extension/README.md)**
+
+---
 
 ## 🆕 What's New in v1.5 (Sept 2025)
 

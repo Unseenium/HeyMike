@@ -1,0 +1,213 @@
+{
+    "name": "heymike",
+    "displayName": "Hey Mike!",
+    "description": "AI-powered voice coding assistant with local MLX",
+    "version": "2.0.0",
+    "publisher": "unseenium",
+    "author": {
+        "name": "Unseenium Inc.",
+        "email": "hello@unseenium.com"
+    },
+    "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/Unseenium/HeyMike"
+    },
+    "engines": {
+        "vscode": "^1.80.0"
+    },
+    "categories": [
+        "Other",
+        "Machine Learning"
+    ],
+    "keywords": [
+        "voice",
+        "dictation",
+        "ai",
+        "mlx",
+        "whisper",
+        "coding assistant"
+    ],
+    "activationEvents": [
+        "onStartupFinished"
+    ],
+    "main": "./out/extension.js",
+    "contributes": {
+        "commands": [
+            {
+                "command": "heymike.startRecording",
+                "title": "Hey Mike: Start Recording",
+                "category": "Hey Mike"
+            },
+            {
+                "command": "heymike.explainCode",
+                "title": "Hey Mike: Explain Code",
+                "category": "Hey Mike"
+            },
+            {
+                "command": "heymike.searchCode",
+                "title": "Hey Mike: Search Code",
+                "category": "Hey Mike"
+            },
+            {
+                "command": "heymike.switchToSmartMode",
+                "title": "Hey Mike: Switch to Smart Mode",
+                "category": "Hey Mike"
+            },
+            {
+                "command": "heymike.switchToActionMode",
+                "title": "Hey Mike: Switch to Action Mode",
+                "category": "Hey Mike"
+            },
+            {
+                "command": "heymike.showQuickPick",
+                "title": "Hey Mike: Show Quick Actions",
+                "category": "Hey Mike"
+            },
+            {
+                "command": "heymike.openSettings",
+                "title": "Hey Mike: Open Settings",
+                "category": "Hey Mike"
+            }
+        ],
+        "configuration": {
+            "title": "Hey Mike!",
+            "properties": {
+                "heymike.backendPort": {
+                    "type": "number",
+                    "default": 8765,
+                    "description": "Port for HeyMike backend server",
+                    "minimum": 1024,
+                    "maximum": 65535
+                },
+                "heymike.autoReconnect": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Auto-reconnect to backend if disconnected"
+                },
+                "heymike.autoStartBackend": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Automatically start Python backend if not running"
+                },
+                "heymike.stopBackendOnExit": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Stop auto-started backend when extension deactivates (false = standalone mode)"
+                },
+                "heymike.whisperModel": {
+                    "type": "string",
+                    "enum": [
+                        "tiny",
+                        "base",
+                        "small",
+                        "medium",
+                        "large"
+                    ],
+                    "default": "small",
+                    "description": "Whisper model for transcription",
+                    "enumDescriptions": [
+                        "Tiny - 39MB (fastest)",
+                        "Base - 74MB (fast)",
+                        "Small - 244MB (balanced)",
+                        "Medium - 769MB (accurate)",
+                        "Large - 1550MB (most accurate)"
+                    ]
+                },
+                "heymike.textLLM": {
+                    "type": "string",
+                    "enum": [
+                        "llama-3.2-1b",
+                        "phi-3-mini",
+                        "qwen-2.5-1.5b"
+                    ],
+                    "default": "llama-3.2-1b",
+                    "description": "LLM for text enhancement (Smart Mode)",
+                    "enumDescriptions": [
+                        "Llama 3.2 1B - 800MB (fastest)",
+                        "Phi-3 Mini - 2.4GB (better quality)",
+                        "Qwen 2.5 1.5B - 1.5GB (balanced)"
+                    ]
+                },
+                "heymike.codeLLM": {
+                    "type": "string",
+                    "enum": [
+                        "deepseek-coder-1.3b",
+                        "qwen-2.5-coder-3b",
+                        "qwen-2.5-coder-7b",
+                        "deepseek-coder-6.7b"
+                    ],
+                    "default": "qwen-2.5-coder-3b",
+                    "description": "LLM for code understanding (Action Mode)",
+                    "enumDescriptions": [
+                        "DeepSeek Coder 1.3B - 1.3GB (fastest)",
+                        "Qwen 2.5 Coder 3B - 3GB (recommended)",
+                        "Qwen 2.5 Coder 7B - 7GB (best quality)",
+                        "DeepSeek Coder 6.7B - 6.7GB (excellent)"
+                    ]
+                },
+                "heymike.enhancementStyle": {
+                    "type": "string",
+                    "enum": [
+                        "standard",
+                        "professional",
+                        "casual",
+                        "technical"
+                    ],
+                    "default": "standard",
+                    "description": "Text enhancement style",
+                    "enumDescriptions": [
+                        "Standard - Natural and clean",
+                        "Professional - Formal business tone",
+                        "Casual - Friendly and conversational",
+                        "Technical - Technical documentation style"
+                    ]
+                },
+                "heymike.currentMode": {
+                    "type": "string",
+                    "enum": [
+                        "smart",
+                        "action"
+                    ],
+                    "default": "smart",
+                    "description": "Current transcription mode"
+                },
+                "heymike.alwaysRaw": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Always use raw transcription (disable AI enhancement)"
+                },
+                "heymike.showOverlays": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Show explanation overlays"
+                },
+                "heymike.showStatusBar": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Show Hey Mike status bar item"
+                }
+            }
+        }
+    },
+    "scripts": {
+        "vscode:prepublish": "npm run compile",
+        "compile": "tsc -p ./",
+        "watch": "tsc -watch -p ./",
+        "pretest": "npm run compile",
+        "lint": "eslint src --ext ts",
+        "package": "vsce package"
+    },
+    "devDependencies": {
+        "@types/node": "^18.x",
+        "@types/vscode": "^1.80.0",
+        "@typescript-eslint/eslint-plugin": "^6.0.0",
+        "@typescript-eslint/parser": "^6.0.0",
+        "eslint": "^8.40.0",
+        "typescript": "^5.0.0",
+        "@vscode/test-electron": "^2.3.0"
+    },
+    "dependencies": {
+        "socket.io-client": "^4.5.0"
+    }
+}

@@ -48,6 +48,27 @@ HeyMike/
 ├── 📊 logs/                        # Log files
 │   └── heymike.log                 # Application logs
 │
+├── 🔌 vscode-extension/            # VS Code Extension (v2.0+)
+│   ├── src/                        # TypeScript source code
+│   │   ├── extension.ts            # Main extension entry point
+│   │   ├── connection/             # Backend client (WebSocket)
+│   │   ├── ui/                     # Status bar & quick pick
+│   │   ├── actions/                # Action router
+│   │   ├── settings/               # Settings sync
+│   │   └── types/                  # Type definitions
+│   ├── package.json                # Extension manifest
+│   ├── tsconfig.json               # TypeScript config
+│   └── README.md                   # Extension documentation
+│
+├── 📝 design_docs/                 # Design documents
+│   ├── PRD-v1.0.md                 # v1.0 Product Requirements
+│   ├── PRD-v1.5.md                 # v1.5 Smart Mode
+│   ├── PRD-v2.0.md                 # v2.0 Action Mode
+│   ├── action-mode-features.md     # Action Mode feature specs
+│   ├── roadmap.md                  # Development roadmap
+│   ├── market-analysis.md          # Market research
+│   └── README.md                   # Design docs index
+│
 └── 📦 Resources/                   # Additional resources
 ```
 
@@ -118,6 +139,14 @@ HeyMike/
 - Visual feedback and status indicators
 - Comprehensive settings dialogs
 - System tray integration
+
+### VS Code Extension (v2.0+)
+- TypeScript-based VS Code extension
+- WebSocket connection to Python backend
+- Status bar with live animations
+- Quick Pick menu for common actions
+- Settings sync (VS Code ↔ Backend)
+- Action routing for Smart/Action modes
 
 ## 🔄 Data Flow
 
