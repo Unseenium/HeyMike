@@ -35,7 +35,15 @@ class AppSettings:
             'add_space_before': False,
             'audio_feedback': True,
             'notifications': True,
-            'first_run': True
+            'first_run': True,
+            # Transcription mode settings
+            'transcription_mode': 'smart',  # smart or action
+            'always_raw': False,  # Disable AI enhancement (always use raw transcription)
+            # LLM Enhancement settings
+            'enhance_text': True,  # Enable text enhancement
+            'enhancement_style': 'standard',  # standard, professional, casual, technical
+            'llm_model': 'llama-3.2-1b',  # LLM model to use
+            'show_enhancement_preview': False  # Show before/after preview
         }
         
         # Current settings
@@ -237,6 +245,20 @@ class AppSettings:
             'insertion_method': self.get('insertion_method'),
             'add_space_after': self.get('add_space_after'),
             'add_space_before': self.get('add_space_before')
+        }
+    
+    def get_enhancement_settings(self) -> Dict[str, Any]:
+        """
+        Get LLM enhancement-related settings
+        
+        Returns:
+            Dictionary of enhancement settings
+        """
+        return {
+            'enhance_text': self.get('enhance_text'),
+            'enhancement_style': self.get('enhancement_style'),
+            'llm_model': self.get('llm_model'),
+            'show_enhancement_preview': self.get('show_enhancement_preview')
         }
     
     def validate_settings(self) -> bool:
