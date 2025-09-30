@@ -20,6 +20,7 @@ from HotkeyManager import HotkeyManager
 from TextInsertionManager import TextInsertionManager
 from MLXLLMManager import MLXLLMManager
 from TextEnhancer import TextEnhancer
+from VSCodeBridge import VSCodeBridge
 from AppSettings import AppSettings
 
 class HeyMikeApp(rumps.App):
@@ -60,6 +61,10 @@ class HeyMikeApp(rumps.App):
         # Initialize LLM and text enhancement
         self.llm_manager = MLXLLMManager()
         self.text_enhancer = TextEnhancer(self.llm_manager)
+        
+        # Initialize VS Code Bridge (v2.0+)
+        self.vscode_bridge = VSCodeBridge(port=8765)
+        self.vscode_bridge.set_settings_callback(self._get_settings_for_vscode)
         
         # Application state
         self.is_recording = False
@@ -309,6 +314,11 @@ class HeyMikeApp(rumps.App):
             # Load initial model asynchronously
             self.whisper_manager.load_model_async(self.current_model)
             
+            # Start VS Code Bridge server (v2.0+)
+            self.logger.info("Starting VS Code Bridge server on port 8765")
+            self.vscode_bridge.start()
+            self.logger.info("VS Code Bridge started - VS Code extension can now connect")
+            
             # Menu already created with correct model selected - no need to update during init
             self.logger.debug(f"Menu created with current model: {self.current_model}")
             
@@ -482,32 +492,66 @@ class HeyMikeApp(rumps.App):
         self.text_enhancer.enhance_async(raw_text, style, enhance_callback)
     
     def _insert_text(self, raw_text: str, final_text: str):
-        """Insert text and update UI"""
+        """Insert text and update UI (sends to VS Code if connected, otherwise local insertion)"""
         self.is_processing = False
         self._update_menu_icon("🎤")
         self.record_item.title = "🔴 Start Recording"
         
-        # Insert text
-        success = self.text_manager.insert_text(final_text)
+        # Send processing state to VS Code
+        self.vscode_bridge.send_processing_state('ready')
         
-        if success:
-            # Show notification with enhancement indicator
-            was_enhanced = raw_text != final_text and self.settings.get('enhance_text', True)
-            notification_prefix = "✨ Enhanced & Inserted" if was_enhanced else "Text Inserted"
+        # Get current mode
+        current_mode = self.hotkey_manager.get_current_mode()
+        
+        # Check if VS Code is connected
+        if self.vscode_bridge.is_connected():
+            # Send transcription to VS Code extension
+            self.logger.info("VS Code connected - sending transcription to extension")
+            self.vscode_bridge.send_transcription(
+                text=final_text,
+                mode=current_mode,
+                context={
+                    'raw_text': raw_text,
+                    'was_enhanced': raw_text != final_text,
+                    'language': self.settings.get('language', 'auto')
+                }
+            )
             
-            self._update_status(f"Inserted: {final_text[:30]}...")
+            # Show notification
+            was_enhanced = raw_text != final_text and self.settings.get('enhance_text', True)
+            notification_prefix = "✨ Sent to VS Code (Enhanced)" if was_enhanced else "Sent to VS Code"
+            self._update_status(f"Sent to VS Code: {final_text[:30]}...")
             self._show_notification(
-                notification_prefix, 
+                notification_prefix,
                 final_text[:100] + ("..." if len(final_text) > 100 else "")
             )
             
-            # Log if enhanced
             if was_enhanced:
                 self.logger.info(f"Original: {raw_text}")
                 self.logger.info(f"Enhanced: {final_text}")
         else:
-            self._update_status("Insertion failed")
-            self._show_notification("Error", "Failed to insert text")
+            # Fallback to local text insertion (no VS Code connected)
+            self.logger.info("VS Code not connected - using local text insertion")
+            success = self.text_manager.insert_text(final_text)
+            
+            if success:
+                # Show notification with enhancement indicator
+                was_enhanced = raw_text != final_text and self.settings.get('enhance_text', True)
+                notification_prefix = "✨ Enhanced & Inserted" if was_enhanced else "Text Inserted"
+                
+                self._update_status(f"Inserted: {final_text[:30]}...")
+                self._show_notification(
+                    notification_prefix, 
+                    final_text[:100] + ("..." if len(final_text) > 100 else "")
+                )
+                
+                # Log if enhanced
+                if was_enhanced:
+                    self.logger.info(f"Original: {raw_text}")
+                    self.logger.info(f"Enhanced: {final_text}")
+            else:
+                self._update_status("Insertion failed")
+                self._show_notification("Error", "Failed to insert text")
     
     def _select_model(self, model_name: str):
         """Select a different Whisper model"""
@@ -899,6 +943,9 @@ class HeyMikeApp(rumps.App):
         self.settings.set('transcription_mode', mode)
         self.settings.save_settings()
         
+        # Notify VS Code extension
+        self.vscode_bridge.send_mode_change(mode)
+        
         # Show notification
         mode_names = {
             'smart': 'Smart Transcription (Auto-enhance)',
@@ -1108,10 +1155,15 @@ class HeyMikeApp(rumps.App):
     def _on_recording_started(self):
         """Called when recording starts"""
         self.logger.debug("Recording started")
+        # Notify VS Code extension
+        self.vscode_bridge.send_recording_state('recording')
     
     def _on_recording_stopped(self, audio_data):
         """Called when recording stops"""
         self.logger.debug(f"Recording stopped, {len(audio_data)} samples")
+        # Notify VS Code extension
+        self.vscode_bridge.send_recording_state('ready')
+        self.vscode_bridge.send_processing_state('processing', 'Transcribing...')
     
     def _on_audio_level(self, level: float):
         """Called with audio level updates"""
@@ -1161,10 +1213,27 @@ class HeyMikeApp(rumps.App):
         self.logger.error(f"Error: {error_message}")
         self._show_notification("Error", error_message)
     
+    def _get_settings_for_vscode(self) -> Dict[str, Any]:
+        """Get current settings for VS Code extension"""
+        return {
+            'model': self.current_model,
+            'llm_model': self.settings.get('llm_model', 'llama-3.2-1b'),
+            'enhancement_style': self.settings.get('enhancement_style', 'standard'),
+            'transcription_mode': self.hotkey_manager.get_current_mode(),
+            'always_raw': self.settings.get('always_raw', False),
+            'enhance_text': self.settings.get('enhance_text', True),
+            'language': self.settings.get('language', None)
+        }
+    
     def _cleanup(self):
         """Clean up resources"""
         try:
             self.logger.info("Starting cleanup...")
+            
+            # Stop VS Code Bridge
+            if hasattr(self, 'vscode_bridge'):
+                self.logger.info("Stopping VS Code Bridge...")
+                self.vscode_bridge.stop()
             
             # Stop hotkey listener first
             self.hotkey_manager.cleanup()
