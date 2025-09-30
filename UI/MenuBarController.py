@@ -18,6 +18,8 @@ from MLXWhisperManager import MLXWhisperManager
 from AudioManager import AudioManager
 from HotkeyManager import HotkeyManager
 from TextInsertionManager import TextInsertionManager
+from MLXLLMManager import MLXLLMManager
+from TextEnhancer import TextEnhancer
 from AppSettings import AppSettings
 
 class HeyMikeApp(rumps.App):
@@ -55,6 +57,10 @@ class HeyMikeApp(rumps.App):
         self.text_manager = TextInsertionManager()
         self.settings = AppSettings()
         
+        # Initialize LLM and text enhancement
+        self.llm_manager = MLXLLMManager()
+        self.text_enhancer = TextEnhancer(self.llm_manager)
+        
         # Application state
         self.is_recording = False
         self.is_processing = False
@@ -71,6 +77,12 @@ class HeyMikeApp(rumps.App):
         
         # Complete initialization
         self._initialize_app()
+        
+        # Load LLM asynchronously if enhancement is enabled
+        if self.settings.get('enhance_text', True):
+            llm_model = self.settings.get('llm_model', 'llama-3.2-1b')
+            self.logger.info(f"Loading LLM model for text enhancement: {llm_model}")
+            self.llm_manager.load_model_async(llm_model)
     
     def _setup_callbacks(self):
         """Setup callbacks between managers"""
@@ -78,6 +90,7 @@ class HeyMikeApp(rumps.App):
         # Hotkey callbacks
         self.hotkey_manager.on_record_toggle = self._toggle_recording
         self.hotkey_manager.on_cancel_recording = self._cancel_recording
+        self.hotkey_manager.on_mode_change = self._handle_mode_change
         
         # Audio callbacks
         self.audio_manager.on_recording_start = self._on_recording_started
@@ -163,6 +176,74 @@ class HeyMikeApp(rumps.App):
         self.menu.add(self.model_menu)
         self.menu.add(rumps.separator)
         
+        # LLM Model selection section
+        self.llm_menu = rumps.MenuItem("🧠 LLM Model")
+        self.llm_items_map = {}  # Store references for updates
+        
+        # Get current LLM model
+        current_llm = self.settings.get('llm_model', 'llama-3.2-1b')
+        
+        # Get available LLM models
+        available_llms = self.llm_manager.get_available_models()
+        
+        for llm_name, info in available_llms.items():
+            is_current = llm_name == current_llm
+            icon = "✅" if is_current else "⚪"
+            
+            # Create callback function with proper closure
+            def make_llm_callback(model):
+                def callback(sender):
+                    self.logger.info(f"LLM model menu item clicked: {model}")
+                    self._select_llm_model(model)
+                return callback
+            
+            llm_item = rumps.MenuItem(
+                f"{icon} {info.get('name', llm_name)} - {info.get('size', '?')} ({info.get('speed', '?')})",
+                callback=make_llm_callback(llm_name)
+            )
+            
+            self.llm_menu.add(llm_item)
+            self.llm_items_map[llm_name] = llm_item
+            
+            self.logger.debug(f"Created LLM menu item for {llm_name}: {llm_item}")
+        
+        self.menu.add(self.llm_menu)
+        self.menu.add(rumps.separator)
+        
+        # Mode selection section
+        self.mode_menu = rumps.MenuItem("🎯 Transcription Mode")
+        self.mode_items_map = {}  # Store references for updates
+        
+        mode_descriptions = {
+            'smart': ('📝 Smart', 'Auto-enhances English, direct paste others', 'Cmd+Opt+1'),
+            'action': ('⚡ Action', 'Voice commands (coming soon)', 'Cmd+Opt+2')
+        }
+        
+        for mode_name, (icon, desc, hotkey) in mode_descriptions.items():
+            is_current = mode_name == self.hotkey_manager.get_current_mode()
+            check = "✓ " if is_current else "   "
+            
+            # Create callback with proper closure
+            def make_mode_callback(mode):
+                def callback(sender):
+                    self._switch_mode(mode)
+                return callback
+            
+            mode_item = rumps.MenuItem(
+                f"{check}{icon} - {desc} ({hotkey})",
+                callback=make_mode_callback(mode_name)
+            )
+            
+            # Disable action mode for now
+            if mode_name == 'action':
+                mode_item.set_callback(None)
+            
+            self.mode_menu.add(mode_item)
+            self.mode_items_map[mode_name] = mode_item
+        
+        self.menu.add(self.mode_menu)
+        self.menu.add(rumps.separator)
+        
         # Settings section with icons
         self.settings_menu = rumps.MenuItem("⚙️ Settings")
         
@@ -175,6 +256,10 @@ class HeyMikeApp(rumps.App):
         
         language_item = rumps.MenuItem("🌍 Language", callback=self._show_language_settings)
         self.settings_menu.add(language_item)
+        
+        self.settings_menu.add(rumps.separator)
+        enhancement_item = rumps.MenuItem("✨ Text Enhancement", callback=self._show_enhancement_settings)
+        self.settings_menu.add(enhancement_item)
         
         self.settings_menu.add(rumps.separator)
         permissions_item = rumps.MenuItem("🔐 Check Permissions", callback=self._check_permissions_detailed)
@@ -214,6 +299,12 @@ class HeyMikeApp(rumps.App):
             
             # Start hotkey listener
             self.hotkey_manager.start_listening()
+            
+            # Set initial transcription mode from settings
+            initial_mode = self.settings.get('transcription_mode', 'smart')
+            self.hotkey_manager.set_mode(initial_mode)
+            self._update_title_for_mode(initial_mode)
+            self.logger.info(f"Initialized with transcription mode: {initial_mode}")
             
             # Load initial model asynchronously
             self.whisper_manager.load_model_async(self.current_model)
@@ -319,34 +410,104 @@ class HeyMikeApp(rumps.App):
             self.record_item.title = "Start Recording"
     
     def _process_audio(self, audio_data):
-        """Process recorded audio through Whisper"""
+        """Process recorded audio through Whisper based on current mode"""
         self.is_processing = True
-        self._update_status("Processing...")
+        self._update_status("Transcribing...")
         self._update_menu_icon("⏳")
         
         # Get language preference
         language = self.settings.get('language', None)
         
+        # Get current transcription mode
+        current_mode = self.hotkey_manager.get_current_mode()
+        
         # Process asynchronously
-        def process_callback(result):
-            self.is_processing = False
-            self._update_menu_icon("🎤")
-            self.record_item.title = "Start Recording"
-            
-            if result:
-                # Insert text
-                success = self.text_manager.insert_text(result)
-                if success:
-                    self._update_status(f"Inserted: {result[:30]}...")
-                    self._show_notification("Text Inserted", result[:50] + ("..." if len(result) > 50 else ""))
-                else:
-                    self._update_status("Insertion failed")
-                    self._show_notification("Error", "Failed to insert text")
+        def process_callback(raw_text):
+            if raw_text:
+                if current_mode == 'smart':
+                    # Smart mode: Auto-enhance English, direct paste for other languages
+                    # Check if user wants to always use raw transcription
+                    if self.settings.get('always_raw', False):
+                        self.logger.info("Always raw mode enabled, skipping enhancement")
+                        self._insert_text(raw_text, raw_text)
+                        return
+                    
+                    # Check if LLM is loaded and language is English
+                    if self.llm_manager.is_model_loaded():
+                        # Auto-detect language
+                        is_english = self._is_likely_english(raw_text)
+                        if is_english:
+                            # Enhance English text
+                            self.logger.info(f"English detected, enhancing: {raw_text[:50]}...")
+                            self._enhance_and_insert(raw_text)
+                        else:
+                            # Non-English: direct paste
+                            self.logger.info(f"Non-English detected, direct paste: {raw_text[:50]}...")
+                            self._insert_text(raw_text, raw_text)
+                    else:
+                        self.logger.warning("LLM not loaded, using raw transcription")
+                        self._insert_text(raw_text, raw_text)
+                        
+                elif current_mode == 'action':
+                    # Action mode: future implementation for voice commands
+                    self._show_notification("Action Mode", "Not yet implemented - using smart transcription")
+                    # Fall back to smart mode logic
+                    if self.settings.get('always_raw', False):
+                        self._insert_text(raw_text, raw_text)
+                    elif self.llm_manager.is_model_loaded() and self._is_likely_english(raw_text):
+                        self._enhance_and_insert(raw_text)
+                    else:
+                        self._insert_text(raw_text, raw_text)
+                    
             else:
+                self.is_processing = False
+                self._update_menu_icon("🎤")
+                self.record_item.title = "🔴 Start Recording"
                 self._update_status("Transcription failed")
                 self._show_notification("Error", "Transcription failed")
         
         self.whisper_manager.transcribe_audio_async(audio_data, language, process_callback)
+    
+    def _enhance_and_insert(self, raw_text: str):
+        """Enhance text with LLM and insert"""
+        self._update_status("Enhancing...")
+        
+        # Get enhancement style
+        style = self.settings.get('enhancement_style', 'standard')
+        
+        def enhance_callback(enhanced_text):
+            self._insert_text(raw_text, enhanced_text)
+        
+        # Enhance asynchronously
+        self.text_enhancer.enhance_async(raw_text, style, enhance_callback)
+    
+    def _insert_text(self, raw_text: str, final_text: str):
+        """Insert text and update UI"""
+        self.is_processing = False
+        self._update_menu_icon("🎤")
+        self.record_item.title = "🔴 Start Recording"
+        
+        # Insert text
+        success = self.text_manager.insert_text(final_text)
+        
+        if success:
+            # Show notification with enhancement indicator
+            was_enhanced = raw_text != final_text and self.settings.get('enhance_text', True)
+            notification_prefix = "✨ Enhanced & Inserted" if was_enhanced else "Text Inserted"
+            
+            self._update_status(f"Inserted: {final_text[:30]}...")
+            self._show_notification(
+                notification_prefix, 
+                final_text[:100] + ("..." if len(final_text) > 100 else "")
+            )
+            
+            # Log if enhanced
+            if was_enhanced:
+                self.logger.info(f"Original: {raw_text}")
+                self.logger.info(f"Enhanced: {final_text}")
+        else:
+            self._update_status("Insertion failed")
+            self._show_notification("Error", "Failed to insert text")
     
     def _select_model(self, model_name: str):
         """Select a different Whisper model"""
@@ -379,6 +540,63 @@ class HeyMikeApp(rumps.App):
         
         # Show notification
         self._show_notification("Model Changed", f"Switched to {model_name.title()} model")
+    
+    def _select_llm_model(self, model_name: str):
+        """Select a different LLM model for text enhancement"""
+        self.logger.info(f"_select_llm_model called with: {model_name}")
+        
+        current_llm = self.settings.get('llm_model', 'llama-3.2-1b')
+        
+        if model_name == current_llm:
+            self.logger.info(f"LLM model {model_name} is already selected, skipping")
+            return
+        
+        self.logger.info(f"Switching LLM model from {current_llm} to {model_name}")
+        
+        # Show loading notification
+        available_llms = self.llm_manager.get_available_models()
+        model_info = available_llms.get(model_name, {})
+        model_display_name = model_info.get('name', model_name)
+        
+        self._show_notification(
+            "Loading LLM Model", 
+            f"Switching to {model_display_name}..."
+        )
+        
+        # Update settings
+        self.settings.set('llm_model', model_name)
+        self.settings.save_settings()
+        
+        # Update menu visuals
+        self._update_llm_menu_display(model_name)
+        
+        # Unload current model and load new one
+        self.llm_manager.unload_model()
+        self.llm_manager.load_model_async(model_name)
+        
+        # Show success notification
+        self._show_notification(
+            "LLM Model Changed", 
+            f"Switched to {model_display_name}\n{model_info.get('size', '?')} - {model_info.get('speed', '?')}"
+        )
+    
+    def _update_llm_menu_display(self, current_model: str):
+        """Update LLM menu to show current selection"""
+        self.logger.debug(f"Updating LLM menu display, current: {current_model}")
+        
+        for model_name, menu_item in self.llm_items_map.items():
+            # Get model info
+            available_llms = self.llm_manager.get_available_models()
+            info = available_llms.get(model_name, {})
+            
+            # Update checkmark
+            is_current = model_name == current_model
+            icon = "✅" if is_current else "⚪"
+            
+            # Update menu item title
+            menu_item.title = f"{icon} {info.get('name', model_name)} - {info.get('size', '?')} ({info.get('speed', '?')})"
+            
+            self.logger.debug(f"Updated LLM menu item {model_name}: {menu_item.title}")
     
     def _update_model_menu_display(self):
         """Update the visual display of model menu items"""
@@ -433,13 +651,13 @@ class HeyMikeApp(rumps.App):
             acc_status = "✅ Granted" if self.text_manager._check_accessibility_permissions() else "❌ Not Granted"
             
             message = (
-                "🔐 Permission Status:\\n\\n"
-                f"🎙️ Microphone: {mic_status}\\n"
-                f"♿ Accessibility: {acc_status}\\n\\n"
-                "Both permissions are required for Hey Mike! to work properly.\\n\\n"
-                "To grant permissions:\\n"
-                "1. Open System Preferences → Security & Privacy\\n"
-                "2. Click Privacy tab\\n"
+                "🔐 Permission Status:\n\n"
+                f"🎙️ Microphone: {mic_status}\n"
+                f"♿ Accessibility: {acc_status}\n\n"
+                "Both permissions are required for Hey Mike! to work properly.\n\n"
+                "To grant permissions:\n"
+                "1. Open System Preferences → Security & Privacy\n"
+                "2. Click Privacy tab\n"
                 "3. Add Terminal to both Microphone and Accessibility"
             )
             
@@ -456,11 +674,11 @@ class HeyMikeApp(rumps.App):
         try:
             # Get recent log entries (this is a simplified version)
             log_info = (
-                "📋 Recent Activity:\\n\\n"
-                f"🎤 Recording State: {'Active' if self.is_recording else 'Inactive'}\\n"
-                f"⚙️ Processing State: {'Active' if self.is_processing else 'Inactive'}\\n"
-                f"🧠 Current Model: {self.current_model}\\n"
-                f"⬇️ Pre-download Status: {'Active' if self.whisper_manager.is_predownloading else 'Complete'}\\n\\n"
+                "📋 Recent Activity:\n\n"
+                f"🎤 Recording State: {'Active' if self.is_recording else 'Inactive'}\n"
+                f"⚙️ Processing State: {'Active' if self.is_processing else 'Inactive'}\n"
+                f"🧠 Current Model: {self.current_model}\n"
+                f"⬇️ Pre-download Status: {'Active' if self.whisper_manager.is_predownloading else 'Complete'}\n\n"
                 "For detailed logs, check the terminal output."
             )
             
@@ -483,13 +701,13 @@ class HeyMikeApp(rumps.App):
         try:
             current_hotkey = self.hotkey_manager.get_record_hotkey_string()
             message = (
-                "⌨️ Hotkey Configuration\\n\\n"
-                f"Current hotkey: {current_hotkey}\\n\\n"
-                "Enter new hotkey combination:\\n"
-                "Examples:\\n"
-                "• cmd+shift+space\\n"
-                "• ctrl+alt+r\\n"
-                "• cmd+option+m\\n\\n"
+                "⌨️ Hotkey Configuration\n\n"
+                f"Current hotkey: {current_hotkey}\n\n"
+                "Enter new hotkey combination:\n"
+                "Examples:\n"
+                "• cmd+shift+space\n"
+                "• ctrl+alt+r\n"
+                "• cmd+option+m\n\n"
                 "New hotkey:"
             )
             
@@ -528,18 +746,18 @@ class HeyMikeApp(rumps.App):
                     marker = "🎙️ " if d['index'] == current_device else "   "
                     device_list.append(f"{marker}{d['index']}: {d['name']}")
                 
-                device_display = "\\n".join(device_list)
+                device_display = "\n".join(device_list)
                 message = (
-                    "🎙️ Audio Device Selection\\n\\n"
-                    f"Current: {current_device if current_device != 'Default' else 'System Default'}\\n\\n"
-                    f"Available devices:\\n{device_display}\\n\\n"
+                    "🎙️ Audio Device Selection\n\n"
+                    f"Current: {current_device if current_device != 'Default' else 'System Default'}\n\n"
+                    f"Available devices:\n{device_display}\n\n"
                     "Enter device number (or leave empty for default):"
                 )
             except Exception as device_error:
                 self.logger.warning(f"Could not enumerate audio devices: {device_error}")
                 message = (
-                    "🎙️ Audio Device Selection\\n\\n"
-                    "⚠️ Could not list audio devices.\\n\\n"
+                    "🎙️ Audio Device Selection\n\n"
+                    "⚠️ Could not list audio devices.\n\n"
                     "Enter device index (or leave empty for default):"
                 )
             
@@ -575,16 +793,16 @@ class HeyMikeApp(rumps.App):
             display_lang = current_lang if current_lang else 'auto'
             
             message = (
-                "🌍 Language Configuration\\n\\n"
-                f"Current: {display_lang}\\n\\n"
-                "Popular language codes:\\n"
-                "• auto - Automatic detection\\n"
-                "• en - English\\n"
-                "• es - Spanish\\n"
-                "• fr - French\\n"
-                "• de - German\\n"
-                "• ja - Japanese\\n"
-                "• zh - Chinese\\n\\n"
+                "🌍 Language Configuration\n\n"
+                f"Current: {display_lang}\n\n"
+                "Popular language codes:\n"
+                "• auto - Automatic detection\n"
+                "• en - English\n"
+                "• es - Spanish\n"
+                "• fr - French\n"
+                "• de - German\n"
+                "• ja - Japanese\n"
+                "• zh - Chinese\n\n"
                 "Enter language code:"
             )
             
@@ -609,6 +827,158 @@ class HeyMikeApp(rumps.App):
             self.logger.error(f"Error in language settings: {str(e)}")
             self._show_notification("❌ Error", f"Language settings error: {str(e)}")
     
+    def _is_likely_english(self, text: str) -> bool:
+        """
+        Simple heuristic to detect if text is likely English
+        Can be improved with proper language detection library
+        """
+        # Common English words
+        common_english_words = {
+            'the', 'be', 'to', 'of', 'and', 'a', 'in', 'that', 'have', 'i',
+            'it', 'for', 'not', 'on', 'with', 'he', 'as', 'you', 'do', 'at',
+            'this', 'but', 'his', 'by', 'from', 'they', 'we', 'say', 'her', 'she',
+            'or', 'an', 'will', 'my', 'one', 'all', 'would', 'there', 'their'
+        }
+        
+        # Convert to lowercase and split into words
+        words = text.lower().split()
+        if not words:
+            return True  # Empty text, assume English
+        
+        # Count how many common English words appear
+        english_word_count = sum(1 for word in words if word.strip('.,!?;:') in common_english_words)
+        
+        # If more than 20% are common English words, consider it English
+        ratio = english_word_count / len(words)
+        return ratio > 0.2
+    
+    def _update_title_for_mode(self, mode: str):
+        """Update menu bar title to show current mode"""
+        mode_icons = {
+            'smart': '📝',
+            'action': '⚡'
+        }
+        icon = mode_icons.get(mode, '🎤')
+        self.title = f"{icon}"
+        self.logger.debug(f"Updated title for mode: {mode}")
+    
+    def _switch_mode(self, mode: str):
+        """Switch to a different transcription mode (called from menu)"""
+        self.logger.info(f"Mode switch requested via menu: {mode}")
+        
+        if self.hotkey_manager.set_mode(mode):
+            # Update UI
+            self._update_mode_menu(mode)
+            self._update_title_for_mode(mode)
+            
+            # Save to settings
+            self.settings.set('transcription_mode', mode)
+            self.settings.save_settings()
+            
+            # Show notification
+            mode_names = {
+                'smart': 'Smart Transcription (Auto-enhance)',
+                'action': 'Action/Command Mode'
+            }
+            self._show_notification(
+                "Mode Switched",
+                f"Now using: {mode_names.get(mode, mode)}"
+            )
+    
+    def _handle_mode_change(self, mode: str):
+        """Handle mode change from hotkey"""
+        self.logger.info(f"Mode changed via hotkey: {mode}")
+        
+        # Update menu items
+        self._update_mode_menu(mode)
+        
+        # Update title
+        self._update_title_for_mode(mode)
+        
+        # Save to settings
+        self.settings.set('transcription_mode', mode)
+        self.settings.save_settings()
+        
+        # Show notification
+        mode_names = {
+            'smart': 'Smart Transcription (Auto-enhance)',
+            'action': 'Action/Command Mode'
+        }
+        self._show_notification(
+            "Mode Switched",
+            f"Now using: {mode_names.get(mode, mode)}"
+        )
+    
+    def _update_mode_menu(self, current_mode: str):
+        """Update checkmarks in mode menu"""
+        mode_descriptions = {
+            'smart': ('📝 Smart', 'Auto-enhances English, direct paste others', 'Cmd+Opt+1'),
+            'action': ('⚡ Action', 'Voice commands (coming soon)', 'Cmd+Opt+2')
+        }
+        
+        for mode_name, mode_item in self.mode_items_map.items():
+            icon, desc, hotkey = mode_descriptions[mode_name]
+            check = "✓ " if mode_name == current_mode else "   "
+            mode_item.title = f"{check}{icon} - {desc} ({hotkey})"
+    
+    def _show_enhancement_settings(self, sender):
+        """Show text enhancement configuration dialog"""
+        self.logger.info("Enhancement settings menu item clicked")
+        try:
+            enhance_enabled = self.settings.get('enhance_text', True)
+            current_style = self.settings.get('enhancement_style', 'standard')
+            
+            # Build status message
+            status = "✅ Enabled" if enhance_enabled else "❌ Disabled"
+            llm_status = "✅ Loaded" if self.llm_manager.is_model_loaded() else "⏳ Loading..."
+            
+            message = (
+                "✨ Text Enhancement Settings\n\n"
+                f"Status: {status}\n"
+                f"LLM Model: {llm_status}\n"
+                f"Style: {current_style}\n\n"
+                "Enhancement improves your transcriptions by:\n"
+                "• Adding proper punctuation\n"
+                "• Fixing capitalization\n"
+                "• Removing filler words (um, uh)\n"
+                "• Improving grammar\n\n"
+                "Available styles:\n"
+                "• standard - Clean and clear\n"
+                "• professional - Formal tone\n"
+                "• casual - Friendly tone\n"
+                "• technical - Technical writing\n\n"
+                "Enter style (or 'off' to disable):"
+            )
+            
+            response = rumps.Window(
+                message=message,
+                title="✨ Enhancement Settings",
+                default_text=current_style,
+                ok="✅ Apply",
+                cancel="❌ Cancel"
+            ).run()
+            
+            if response.clicked:
+                user_input = response.text.strip().lower()
+                
+                if user_input == 'off':
+                    self.settings.set('enhance_text', False)
+                    self.text_enhancer.set_enabled(False)
+                    self.settings.save_settings()
+                    self._show_notification("✨ Enhancement Disabled", "Text will not be enhanced")
+                elif user_input in ['standard', 'professional', 'casual', 'technical']:
+                    self.settings.set('enhance_text', True)
+                    self.settings.set('enhancement_style', user_input)
+                    self.text_enhancer.set_enabled(True)
+                    self.text_enhancer.set_style(user_input)
+                    self.settings.save_settings()
+                    self._show_notification("✨ Enhancement Updated", f"Style: {user_input}")
+                else:
+                    self._show_notification("❌ Invalid Input", "Use: standard, professional, casual, technical, or off")
+        except Exception as e:
+            self.logger.error(f"Error in enhancement settings: {str(e)}")
+            self._show_notification("❌ Error", f"Enhancement settings error: {str(e)}")
+    
     def _show_about(self, sender):
         """Show about dialog"""
         self.logger.info("About dialog opened")
@@ -624,26 +994,26 @@ class HeyMikeApp(rumps.App):
             macos_version = platform.mac_ver()[0]
             
             message = (
-                "ℹ️ About Hey Mike!\\n\\n"
-                "🎤 MLX Whisper Dictation System\\n"
-                "Version 1.0.0 (Production Ready)\\n\\n"
-                "📊 Current Status:\\n"
-                f"• Model: {model_status}\\n"
-                f"• Hotkey: {self.hotkey_manager.get_record_hotkey_string()}\\n"
-                f"• Downloaded Models: {len(download_status['downloaded_models'])}/5\\n"
-                f"• Python: {python_version}\\n"
-                f"• macOS: {macos_version}\\n\\n"
-                "🔒 Privacy Features:\\n"
-                "• 100% offline processing\\n"
-                "• No data sent to servers\\n"
-                "• Local model storage\\n"
-                "• Zero cloud dependencies\\n\\n"
-                "⚡ Technology Stack:\\n"
-                "• MLX-optimized Whisper models\\n"
-                "• Apple Silicon acceleration\\n"
-                "• Real-time transcription\\n"
-                "• Native macOS integration\\n\\n"
-                "© 2025 Unseenium Inc. Enterprise-grade dictation."
+                "ℹ️ About Hey Mike!\n\n"
+                "🎤 AI-Enhanced Voice Dictation\n"
+                "Version 2.0.0 with Text Enhancement\n\n"
+                "📊 Current Status:\n"
+                f"• Whisper Model: {model_status}\n"
+                f"• Enhancement: {'✅ Enabled' if self.settings.get('enhance_text') else '❌ Disabled'}\n"
+                f"• Hotkey: {self.hotkey_manager.get_record_hotkey_string()}\n"
+                f"• Python: {python_version}\n"
+                f"• macOS: {macos_version}\n\n"
+                "✨ What's New in v2.0:\n"
+                "• AI text enhancement with LLM\n"
+                "• Automatic punctuation & grammar\n"
+                "• Filler word removal\n"
+                "• Multiple enhancement styles\n\n"
+                "🔒 Privacy Features:\n"
+                "• 100% offline processing\n"
+                "• No data sent to servers\n"
+                "• Local AI models\n"
+                "• Zero cloud dependencies\n\n"
+                "© 2025 Unseenium Inc."
             )
             
             rumps.alert(title="About Hey Mike!", message=message)
@@ -666,10 +1036,10 @@ class HeyMikeApp(rumps.App):
             # Show instruction to user
             response = rumps.alert(
                 title="Text Insertion Test",
-                message="This will test text insertion functionality.\\n\\n"
-                       "1. Click OK\\n"
-                       "2. Click in any text field (TextEdit, Notes, etc.)\\n"
-                       "3. The test text will be inserted automatically\\n\\n"
+                message="This will test text insertion functionality.\n\n"
+                       "1. Click OK\n"
+                       "2. Click in any text field (TextEdit, Notes, etc.)\n"
+                       "3. The test text will be inserted automatically\n\n"
                        "Ready to proceed?",
                 ok="✅ Run Test",
                 cancel="❌ Cancel"
@@ -794,10 +1164,23 @@ class HeyMikeApp(rumps.App):
     def _cleanup(self):
         """Clean up resources"""
         try:
+            self.logger.info("Starting cleanup...")
+            
+            # Stop hotkey listener first
             self.hotkey_manager.cleanup()
-            self.audio_manager.cleanup()
-            self.whisper_manager.unload_model()
-            self.logger.info("Cleanup completed")
+            
+            # Stop audio recording if active
+            if self.audio_manager:
+                self.audio_manager.cleanup()
+            
+            # Unload models to free memory
+            if self.whisper_manager:
+                self.whisper_manager.unload_model()
+            
+            if self.llm_manager:
+                self.llm_manager.unload_model()
+            
+            self.logger.info("Cleanup completed successfully")
         except Exception as e:
             self.logger.error(f"Error during cleanup: {str(e)}")
 

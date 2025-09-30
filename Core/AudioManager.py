@@ -20,20 +20,26 @@ class AudioManager:
     CHUNK_SIZE = 1024    # Audio buffer size
     FORMAT = pyaudio.paInt16  # 16-bit audio
     
+    # Safety limits
+    MAX_RECORDING_DURATION = 300.0  # 5 minutes (increased from 30s)
+    MAX_BUFFER_SIZE = 100 * 1024 * 1024  # 100MB max audio buffer (safety limit)
+    
     def __init__(self):
         """Initialize Audio Manager"""
         self.pyaudio_instance = None
         self.stream = None
         self.is_recording = False
-        self.audio_buffer = queue.Queue()
+        self.audio_buffer = []  # Use list of numpy arrays instead of Queue
+        self.buffer_lock = threading.Lock()  # Thread-safe access
         self.recording_thread = None
         self.logger = logging.getLogger(__name__)
         
         # Audio settings
         self.input_device_index = None
         self.silence_threshold = 500  # Amplitude threshold for silence detection
-        self.max_recording_duration = 30.0  # Maximum recording time in seconds
+        self.max_recording_duration = self.MAX_RECORDING_DURATION  # Maximum recording time
         self.silence_duration = 2.0  # Seconds of silence before auto-stop
+        self.current_buffer_size = 0  # Track buffer size in bytes
         
         # Callbacks
         self.on_recording_start: Optional[Callable[[], None]] = None
@@ -145,6 +151,9 @@ class AudioManager:
             return False
         
         try:
+            # Clear audio buffer before starting
+            self._clear_buffer()
+            
             # Open audio stream
             self.stream = self.pyaudio_instance.open(
                 format=self.FORMAT,
@@ -155,10 +164,6 @@ class AudioManager:
                 frames_per_buffer=self.CHUNK_SIZE,
                 stream_callback=self._audio_callback
             )
-            
-            # Clear audio buffer
-            while not self.audio_buffer.empty():
-                self.audio_buffer.get()
             
             self.is_recording = True
             self.stream.start_stream()
@@ -203,24 +208,31 @@ class AudioManager:
             if self.recording_thread and self.recording_thread.is_alive():
                 self.recording_thread.join(timeout=1.0)
             
-            # Collect all audio data from buffer
-            audio_data = []
-            while not self.audio_buffer.empty():
-                chunk = self.audio_buffer.get()
-                audio_data.extend(chunk)
+            # Collect all audio data from buffer (thread-safe)
+            with self.buffer_lock:
+                if not self.audio_buffer:
+                    self.logger.warning("No audio data recorded")
+                    self._clear_buffer()
+                    return None
+                
+                # Concatenate all numpy arrays efficiently
+                audio_array = np.concatenate(self.audio_buffer, axis=0)
+                
+                # Log buffer stats
+                buffer_size_mb = self.current_buffer_size / 1024 / 1024
+                duration_sec = len(audio_array) / self.SAMPLE_RATE
+                self.logger.info(
+                    f"Recording stopped: {len(audio_array)} samples, "
+                    f"{duration_sec:.1f}s, {buffer_size_mb:.1f}MB"
+                )
+                
+                # Clear buffer
+                self._clear_buffer()
             
-            if not audio_data:
-                self.logger.warning("No audio data recorded")
-                return None
-            
-            # Convert to numpy array and normalize
-            audio_array = np.array(audio_data, dtype=np.float32)
-            
-            # Normalize to [-1, 1] range
+            # Convert to float32 and normalize to [-1, 1] range
+            audio_array = audio_array.astype(np.float32)
             if audio_array.max() > 0:
                 audio_array = audio_array / 32768.0  # Convert from int16 to float32
-            
-            self.logger.info(f"Recording stopped, captured {len(audio_array)} samples")
             
             if self.on_recording_stop:
                 self.on_recording_stop(audio_array)
@@ -228,10 +240,16 @@ class AudioManager:
             return audio_array
             
         except Exception as e:
-            self.logger.error(f"Failed to stop recording: {str(e)}")
+            self.logger.error(f"Failed to stop recording: {str(e)}", exc_info=True)
+            self._clear_buffer()  # Ensure cleanup even on error
             if self.on_error:
                 self.on_error(f"Failed to stop recording: {str(e)}")
             return None
+    
+    def _clear_buffer(self):
+        """Clear audio buffer and reset size counter"""
+        self.audio_buffer.clear()
+        self.current_buffer_size = 0
     
     def _audio_callback(self, in_data, frame_count, time_info, status):
         """
@@ -250,8 +268,18 @@ class AudioManager:
             # Convert bytes to numpy array
             audio_chunk = np.frombuffer(in_data, dtype=np.int16)
             
-            # Add to buffer
-            self.audio_buffer.put(audio_chunk.tolist())
+            # Check buffer size limit (safety check)
+            chunk_size = audio_chunk.nbytes
+            if self.current_buffer_size + chunk_size > self.MAX_BUFFER_SIZE:
+                self.logger.warning(f"Buffer size limit reached ({self.MAX_BUFFER_SIZE/1024/1024:.1f}MB), stopping recording")
+                # Stop recording gracefully
+                self.is_recording = False
+                return (None, pyaudio.paComplete)
+            
+            # Add to buffer (thread-safe) - keep as numpy array for efficiency
+            with self.buffer_lock:
+                self.audio_buffer.append(audio_chunk.copy())  # Copy to avoid data corruption
+                self.current_buffer_size += chunk_size
             
             # Calculate audio level for visual feedback
             if self.on_audio_level:
@@ -264,14 +292,32 @@ class AudioManager:
         """Monitor recording for silence detection and auto-stop"""
         start_time = time.time()
         last_sound_time = start_time
+        warning_shown = False
         
         while self.is_recording:
             current_time = time.time()
+            elapsed = current_time - start_time
+            
+            # Warn when approaching limit (at 80% of max duration)
+            if not warning_shown and elapsed > (self.max_recording_duration * 0.8):
+                remaining = self.max_recording_duration - elapsed
+                self.logger.warning(
+                    f"Approaching max recording duration: {remaining:.0f}s remaining"
+                )
+                warning_shown = True
             
             # Check maximum recording duration
-            if current_time - start_time > self.max_recording_duration:
-                self.logger.info("Maximum recording duration reached, stopping")
+            if elapsed > self.max_recording_duration:
+                self.logger.warning(
+                    f"Maximum recording duration ({self.max_recording_duration:.0f}s) reached, stopping"
+                )
+                # Gracefully stop recording
                 self.stop_recording()
+                if self.on_error:
+                    self.on_error(
+                        f"Recording stopped: maximum duration "
+                        f"({self.max_recording_duration:.0f}s) reached"
+                    )
                 break
             
             # Simple silence detection based on recent audio levels

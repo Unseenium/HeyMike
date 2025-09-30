@@ -12,8 +12,16 @@ import threading
 class HotkeyManager:
     """Manages global hotkeys for Hey Mike!"""
     
-    # Default hotkey combination: Cmd + Shift + Space
+    # Default hotkey combinations
     DEFAULT_HOTKEY = {Key.cmd, Key.shift, Key.space}
+    
+    # Mode-specific hotkeys (Cmd+Option+Number)
+    # Use virtual keycodes (vk) which are hardware-based and don't change with modifiers
+    # vk codes for US keyboard: 1=18, 2=19
+    MODE_HOTKEYS = {
+        'smart': {Key.cmd, Key.alt, 18},      # Cmd+Option+1 (Smart transcription with auto-enhancement)
+        'action': {Key.cmd, Key.alt, 19}      # Cmd+Option+2 (Voice commands)
+    }
     
     def __init__(self):
         """Initialize Hotkey Manager"""
@@ -24,6 +32,7 @@ class HotkeyManager:
         # Current hotkey configuration
         self.record_hotkey = self.DEFAULT_HOTKEY.copy()
         self.cancel_hotkey = {Key.esc}
+        self.mode_hotkeys = self.MODE_HOTKEYS.copy()
         
         # Currently pressed keys
         self.pressed_keys: Set[Key] = set()
@@ -31,10 +40,12 @@ class HotkeyManager:
         # Callbacks
         self.on_record_toggle: Optional[Callable[[], None]] = None
         self.on_cancel_recording: Optional[Callable[[], None]] = None
+        self.on_mode_change: Optional[Callable[[str], None]] = None  # New: mode change callback
         self.on_error: Optional[Callable[[str], None]] = None
         
         # State tracking
         self.recording_active = False
+        self.current_mode = 'smart'  # Default mode
     
     def start_listening(self) -> bool:
         """
@@ -72,6 +83,11 @@ class HotkeyManager:
         try:
             if self.listener:
                 self.listener.stop()
+                # Wait for listener thread to finish
+                try:
+                    self.listener.join(timeout=1.0)
+                except Exception:
+                    pass
                 self.listener = None
             
             self.is_listening = False
@@ -91,6 +107,9 @@ class HotkeyManager:
         try:
             # Add key to pressed set
             self.pressed_keys.add(key)
+            
+            # DEBUG: Log key presses
+            self.logger.debug(f"Key pressed: {repr(key)}, Pressed keys: {[repr(k) for k in self.pressed_keys]}")
             
             # Check for hotkey matches
             self._check_hotkey_combinations()
@@ -115,6 +134,27 @@ class HotkeyManager:
     def _check_hotkey_combinations(self):
         """Check if any configured hotkey combinations are currently pressed"""
         
+        # Check mode-switching hotkeys first (priority)
+        for mode_name, mode_keys in self.mode_hotkeys.items():
+            # DEBUG: Log mode hotkey checking
+            if len(self.pressed_keys) >= len(mode_keys):
+                self.logger.debug(f"Checking mode '{mode_name}': need {[repr(k) for k in mode_keys]}, have {[repr(k) for k in self.pressed_keys]}")
+            
+            if self._is_hotkey_pressed(mode_keys):
+                if mode_name != self.current_mode:
+                    self.logger.info(f"Mode switch detected: {self.current_mode} → {mode_name}")
+                    old_mode = self.current_mode
+                    self.current_mode = mode_name
+                    if self.on_mode_change:
+                        # Create callback with proper closure
+                        def mode_callback(m=mode_name):
+                            self.on_mode_change(m)
+                        threading.Thread(
+                            target=mode_callback, 
+                            daemon=True
+                        ).start()
+                return  # Don't check other hotkeys
+        
         # Check record toggle hotkey
         if self._is_hotkey_pressed(self.record_hotkey):
             self.logger.debug("Record toggle hotkey detected")
@@ -133,12 +173,21 @@ class HotkeyManager:
         Check if a specific hotkey combination is currently pressed
         
         Args:
-            hotkey_set: Set of keys that should be pressed
+            hotkey_set: Set of keys/vk codes that should be pressed
             
         Returns:
             True if the hotkey combination is pressed, False otherwise
         """
-        return hotkey_set.issubset(self.pressed_keys)
+        # Build a set of currently pressed keys including vk codes
+        pressed_keys_with_vk = set()
+        for key in self.pressed_keys:
+            pressed_keys_with_vk.add(key)
+            # Also add vk (virtual keycode) if it exists
+            if hasattr(key, 'vk') and key.vk is not None:
+                pressed_keys_with_vk.add(key.vk)
+        
+        # Check if all required keys/vk codes are pressed
+        return hotkey_set.issubset(pressed_keys_with_vk)
     
     def set_record_hotkey(self, keys: Set) -> bool:
         """
@@ -233,6 +282,60 @@ class HotkeyManager:
         """
         self.recording_active = is_recording
         self.logger.debug(f"Recording state set to: {is_recording}")
+    
+    def get_current_mode(self) -> str:
+        """
+        Get the current mode
+        
+        Returns:
+            Current mode name ('smart' or 'action')
+        """
+        return self.current_mode
+    
+    def set_mode(self, mode: str) -> bool:
+        """
+        Manually set the current mode
+        
+        Args:
+            mode: Mode name to set
+            
+        Returns:
+            True if mode is valid and set, False otherwise
+        """
+        if mode in self.mode_hotkeys:
+            old_mode = self.current_mode
+            self.current_mode = mode
+            self.logger.info(f"Mode manually set: {old_mode} → {mode}")
+            return True
+        else:
+            self.logger.error(f"Invalid mode: {mode}")
+            return False
+    
+    def get_mode_hotkey_string(self, mode: str) -> Optional[str]:
+        """
+        Get string representation of a mode's hotkey
+        
+        Args:
+            mode: Mode name
+            
+        Returns:
+            String representation or None if mode not found
+        """
+        if mode in self.mode_hotkeys:
+            return self._hotkey_to_string(self.mode_hotkeys[mode])
+        return None
+    
+    def get_all_mode_hotkeys(self) -> Dict[str, str]:
+        """
+        Get all mode hotkeys as strings
+        
+        Returns:
+            Dictionary mapping mode names to hotkey strings
+        """
+        return {
+            mode: self._hotkey_to_string(keys)
+            for mode, keys in self.mode_hotkeys.items()
+        }
     
     @staticmethod
     def parse_hotkey_string(hotkey_string: str) -> Optional[Set]:

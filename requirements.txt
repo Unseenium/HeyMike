@@ -1,10 +1,11 @@
 # MLX and Whisper dependencies
 mlx-whisper>=0.4.3
 mlx>=0.29.1
+mlx-lm>=0.14.0
 
 # Audio processing (requires PortAudio: brew install portaudio)
 pyaudio>=0.2.14
-numpy>=2.3.0
+numpy>=1.24.0,<2.0.0
 
 # Menu bar interface
 rumps>=0.4.0
@@ -21,7 +22,7 @@ pyobjc-framework-ApplicationServices>=11.1
 pyyaml>=6.0
 
 # Additional dependencies for MLX Whisper
-torch>=2.8.0
-tqdm>=4.67.0
-huggingface-hub>=0.35.0
+torch>=2.0.0
+tqdm>=4.65.0
+huggingface-hub>=0.20.0
 
