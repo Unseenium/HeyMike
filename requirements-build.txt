@@ -1,0 +1,7 @@
+# Build dependencies for creating macOS .app bundle
+# Install with: pip install -r requirements-build.txt
+
+# PyInstaller - Used for creating standalone .app bundles
+# (Replaced py2app due to recursion issues with MLX/PyQt6)
+pyinstaller>=6.16.0
+setuptools>=68.0.0

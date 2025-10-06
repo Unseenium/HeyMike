@@ -127,3 +127,23 @@ site/
 *.app
 dist/
 build/
+
+# Build artifacts (Phase 1)
+HeyMike.iconset/
+
+# EXCEPTION: Keep these build files
+!heymike.spec
+!assets/icon.icns
+
+# VS Code Extension
+vscode-extension/out/
+vscode-extension/node_modules/
+*.js.map
+
+# Build logs (regenerated each build)
+*.log
+build.log
+pyinstaller_build.log
+
+# Internal documentation (not for public release)
+internal/

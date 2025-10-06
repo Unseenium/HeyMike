@@ -2,6 +2,232 @@
 
 All notable changes to Hey Mike! will be documented in this file.
 
+## [1.0.0] - 2025-10-05
+
+### Added - Phase 1 Complete! 🎉
+
+#### 📋 Never Lose Text (Hybrid Clipboard Approach)
+- **Always in Clipboard**: Every transcription automatically copied to clipboard
+- **Smart Auto-Insert**: Tries to paste at cursor, falls back to clipboard if no text field
+- **Clear Feedback**: Different notifications based on result ("Inserted 📋" vs "Copied to Clipboard")
+- **Clipboard-First Safety**: Text never lost, even if auto-insert fails
+- **Manual Paste Fallback**: Press Cmd+V anytime to paste from clipboard
+
+#### 🔄 Transcription History
+- **Last 10 Transcriptions**: Stored in memory with timestamps
+- **Recent Transcriptions Menu**: Access via 🎤 → 📋 Recent Transcriptions
+- **One-Click Reuse**: Click any item to copy & paste again
+- **Enhancement Indicator**: ✨ shows AI-cleaned text
+- **Timestamps**: HH:MM format for context
+- **Clear History**: Option to wipe all history
+- **60-Char Preview**: Shows first 60 characters of each transcription
+
+#### ❌ Easy Cancel
+- **Esc Key Support**: Cancel at any time during workflow
+- **Visual Feedback**: Red X appears in overlay (500ms)
+- **Works Everywhere**: Recording, transcription, or AI enhancement stages
+- **Safe Cancellation**: No text inserted, audio discarded, returns to idle
+- **State Checks**: Callbacks verify cancellation state before proceeding
+
+#### 🎨 Visual Recording Overlay
+- **Animated Waveform**: Real-time voice visualization with 35 bars
+- **Cyan → Purple Gradient**: Beautiful color progression
+- **Amplitude-Based Brightness**: Bars brighten up to 40% with volume
+- **State Animations**: 
+  - 🔴 Recording: Pulsing red dot + animated waveform
+  - ⏳ Processing: Rotating spinner arc
+  - ✅ Complete: Green checkmark (500ms)
+  - ❌ Cancelled: Red X (500ms)
+- **Non-Intrusive**: No focus stealing, transparent to input
+- **Bottom-Center**: Positioned 60px from bottom
+- **Thread-Safe**: PyQt6 signals/slots for cross-thread updates
+- **Smooth Animations**: 200ms fade in/out, 30 FPS updates
+
+#### 🎯 Menu Bar Only App
+- **No Dock Icon**: Uses NSApplicationActivationPolicyAccessory
+- **Pure Menu Bar**: Appears only in menu bar (🎤 icon)
+- **Not in Cmd+Tab**: Doesn't appear in app switcher
+- **Professional UX**: Clean, non-intrusive presence
+
+#### 🤖 AI Enhancement
+- **Auto Language Detection**: Distinguishes English from other languages
+- **Smart Enhancement**: Punctuation, grammar, filler word removal for English
+- **Direct Paste Non-English**: No AI processing for non-English text
+- **4 Enhancement Styles**: Standard, Professional, Casual, Technical
+- **Local LLM**: Llama 3.2 1B (completely private)
+- **Optional**: Can be disabled in settings
+
+### Changed
+
+#### 🔧 Core Improvements
+- **TextInsertionManager**: Changed return type from `bool` to `dict` with status
+- **Status Values**: `'inserted'`, `'clipboard_only'`, `'failed'`
+- **No Clipboard Restore**: No longer restores original clipboard content
+- **MenuBarController**: Added history management and clipboard feedback
+- **OverlayWindow**: Added `STATE_CANCELLED` state
+- **OverlayManager**: Added `show_cancelled()` signal/slot
+
+### Fixed
+- **Menu Initialization**: Fixed rumps menu initialization order for history submenu
+- **Thread Safety**: All overlay updates via PyQt6 signals (no crashes)
+- **Focus Stealing**: Overlay uses SplashScreen window type (no focus theft)
+- **Cursor Movement**: Overlay completely transparent to input
+
+### Technical Details
+- **New Files**:
+  - `Models/TranscriptionHistory.py`: History management class
+  - `Core/AmplitudeAnalyzer.py`: Real-time amplitude calculation
+  - `UI/OverlayWindow.py`: PyQt6 visual overlay
+  - `UI/OverlayManager.py`: Thread-safe overlay coordinator
+  - `UI/WaveformRenderer.py`: Animated waveform drawing
+- **Dependencies Added**:
+  - PyQt6>=6.5.0 (visual overlay)
+- **Performance**:
+  - 30 FPS waveform updates
+  - 200ms fade animations
+  - <50ms clipboard copy latency
+
+---
+
+## [2.0.0] - 2025-09-30
+
+### 🚀 Major Release: VS Code Integration + Hybrid Architecture
+
+This is a **major release** that transforms Hey Mike! from a standalone macOS dictation tool into a hybrid system with deep VS Code integration!
+
+### Added - VS Code Extension 🎉
+
+#### Core Features
+- 🔌 **VS Code Extension** - Full-featured TypeScript extension for VS Code
+- 🌉 **WebSocket Bridge** - Real-time bidirectional communication (Python ↔ VS Code)
+- 🤖 **Auto-Start Backend** - Extension automatically starts Python backend if not running
+- 🔄 **Hybrid Architecture** - Backend runs standalone OR managed by VS Code
+- 📊 **Status Bar Integration** - Live recording/processing indicators with animations
+- 🎯 **Quick Pick Menu** - Fast access to commands and settings
+- ⚙️ **Settings Sync** - Bidirectional sync between VS Code and Python backend
+
+#### Backend Enhancements
+- 🌐 **Flask-SocketIO Server** - WebSocket server on port 8765
+- 📡 **HTTP REST API** - `/health`, `/api/settings`, `/api/explain` endpoints
+- 🔔 **State Notifications** - Recording, processing, and mode changes broadcast to VS Code
+- 🎨 **Dual UI System** - macOS menu bar + VS Code status bar (synchronized)
+
+#### Smart Features
+- ✨ **Smart Mode** - Auto-detects English for AI enhancement, direct paste for other languages
+- ⚡ **Action Mode** - Voice command infrastructure with intelligent fallback
+- 🧠 **LLM Model Selection** - Choose from 3 text enhancement models via UI
+- 🔍 **Process Monitoring** - Backend logs visible in VS Code Debug Console
+- 🔁 **Auto-Reconnect** - Handles backend crashes and restarts gracefully
+
+### VS Code Extension Details
+
+#### Commands (7 total)
+- `heymike.startRecording` - Start voice recording
+- `heymike.explainCode` - Explain selected code (v2.0 foundation)
+- `heymike.searchCode` - Search codebase
+- `heymike.switchToSmartMode` - Switch to Smart Mode (Cmd+Opt+1)
+- `heymike.switchToActionMode` - Switch to Action Mode (Cmd+Opt+2)
+- `scripts/heymike.showQuickPick` - Show quick actions menu
+- `heymike.openSettings` - Open extension settings
+
+#### Configuration Settings (12 total)
+- `heymike.backendPort` - Backend server port (default: 8765)
+- `heymike.autoReconnect` - Auto-reconnect if disconnected (default: true)
+- `heymike.autoStartBackend` - Auto-start backend if not running (default: true)
+- `heymike.stopBackendOnExit` - Stop backend when extension exits (default: false)
+- `heymike.whisperModel` - Whisper model selection (5 options)
+- `heymike.textLLM` - Text enhancement LLM (3 options)
+- `heymike.codeLLM` - Code understanding LLM (4 options, future use)
+- `heymike.enhancementStyle` - Text style (4 options)
+- `heymike.currentMode` - Active mode (smart/action)
+- `heymike.alwaysRaw` - Disable AI enhancement (default: false)
+- `scripts/heymike.showOverlays` - Show explanation overlays (default: true)
+- `scripts/heymike.showStatusBar` - Show status bar item (default: true)
+
+#### Architecture Components
+- **BackendClient** - WebSocket connection management
+- **StatusBarManager** - Animated status bar (recording, processing, modes)
+- **QuickPickMenu** - Command palette integration
+- **ActionRouter** - Route transcriptions to Smart/Action mode handlers
+- **SettingsSync** - Bidirectional settings synchronization
+
+### Changed
+- **Transcription Routing** - Now sends to VS Code if connected, falls back to local insertion
+- **Mode System** - Simplified from 3 modes → 2 modes (Smart, Action)
+- **Settings** - Added `always_raw` option to disable AI enhancement
+- **Logging** - Backend output now visible in VS Code Debug Console
+
+### Enhanced
+- **LLM Integration** - Added UI for model selection (Llama 3.2 1B, Phi-3 Mini, Qwen 2.5 1.5B)
+- **Error Handling** - Better error messages and retry logic
+- **User Experience** - No manual terminal management needed
+- **Documentation** - Added comprehensive PRDs, roadmap, and feature specs
+
+### Dependencies Added
+- `Flask>=3.0.0` - Web framework for WebSocket bridge
+- `Flask-SocketIO>=5.3.0` - WebSocket support
+- `Flask-CORS>=4.0.0` - Cross-origin resource sharing
+- `python-socketio>=5.10.0` - Python Socket.IO client
+- `eventlet>=0.33.0` - Async networking library
+
+### Fixed
+- Long recording crash bug (see v1.5.0 fixes - still applies)
+- Action Mode fallback - Now silently inserts text if command not recognized
+- Process cleanup - Backend gracefully stops on extension deactivation (if configured)
+
+### Documentation
+- Added `design_docs/PRD-v2.0.md` - VS Code integration PRD
+- Added `design_docs/action-mode-features.md` - Future features roadmap
+- Added `vscode-extension/README.md` - Extension user guide
+- Updated `PROJECT_STRUCTURE.md` - Added vscode-extension/ structure
+
+### Technical Notes
+- **Backward Compatible** - Backend still works standalone without VS Code
+- **Standalone Mode** - Auto-started backend continues running after extension exit
+- **Port** - WebSocket server runs on port 8765 (configurable)
+- **Process Management** - Smart Python venv detection and process spawning
+
+### Breaking Changes
+None - v1.5 standalone mode fully supported!
+
+### Migration Guide
+**From v1.5 to v2.0:**
+1. Install Flask dependencies: `pip install -r requirements.txt`
+2. (Optional) Install VS Code extension from `vscode-extension/`
+3. Backend continues to work exactly as before
+4. VS Code integration is additive, not required
+
+---
+
+## [1.5.0] - 2025-09-29
+
+### Added
+- **Smart Mode** - Auto-enhances English, direct paste for other languages
+- **AI Text Enhancement** - LLM integration for punctuation, grammar, filler word removal
+- **LLM Model Selection** - Choose from 3 models via menu bar
+- **2-Mode System** - Simplified from 3 modes to 2 (Smart, Action)
+- **Mode Switching** - Hotkeys Cmd+Opt+1/2 for Smart/Action modes
+
+### Fixed - CRITICAL
+- **Long Recording Crash Bug** - Fixed 5 critical issues:
+  1. Increased max recording duration from 30s → 300s (5 minutes)
+  2. Changed audio buffer from Queue → numpy list (4-8x more memory efficient)
+  3. Added 100MB safety limit to prevent unbounded memory growth
+  4. Implemented proper buffer cleanup (prevents memory leaks)
+  5. Added warnings when approaching max duration
+
+### Changed
+- Audio buffer implementation (Queue → list of numpy arrays)
+- Max recording duration (30s → 300s)
+- Buffer size monitoring (added 100MB limit)
+- Enhanced logging (duration, memory stats on recording stop)
+- Thread safety (added buffer_lock)
+
+### Technical Details
+See `CHANGELOG.md` v1.5.0 for complete bugfix details.
+
+---
+
 ## [1.0.0] - 2025-09-26
 
 ### Added
