@@ -237,6 +237,13 @@ function registerCommands(context: vscode.ExtensionContext) {
             vscode.commands.executeCommand('workbench.action.openSettings', 'heymike');
         })
     );
+
+    // Open voice notes
+    context.subscriptions.push(
+        vscode.commands.registerCommand('heymike.openNotes', () => {
+            actionRouter.openNotes();
+        })
+    );
 }
 
 /**

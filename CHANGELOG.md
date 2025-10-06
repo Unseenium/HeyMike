@@ -2,6 +2,93 @@
 
 All notable changes to Hey Mike! will be documented in this file.
 
+## [1.0.0] - 2025-10-05
+
+### Added - Phase 1 Complete! 🎉
+
+#### 📋 Never Lose Text (Hybrid Clipboard Approach)
+- **Always in Clipboard**: Every transcription automatically copied to clipboard
+- **Smart Auto-Insert**: Tries to paste at cursor, falls back to clipboard if no text field
+- **Clear Feedback**: Different notifications based on result ("Inserted 📋" vs "Copied to Clipboard")
+- **Clipboard-First Safety**: Text never lost, even if auto-insert fails
+- **Manual Paste Fallback**: Press Cmd+V anytime to paste from clipboard
+
+#### 🔄 Transcription History
+- **Last 10 Transcriptions**: Stored in memory with timestamps
+- **Recent Transcriptions Menu**: Access via 🎤 → 📋 Recent Transcriptions
+- **One-Click Reuse**: Click any item to copy & paste again
+- **Enhancement Indicator**: ✨ shows AI-cleaned text
+- **Timestamps**: HH:MM format for context
+- **Clear History**: Option to wipe all history
+- **60-Char Preview**: Shows first 60 characters of each transcription
+
+#### ❌ Easy Cancel
+- **Esc Key Support**: Cancel at any time during workflow
+- **Visual Feedback**: Red X appears in overlay (500ms)
+- **Works Everywhere**: Recording, transcription, or AI enhancement stages
+- **Safe Cancellation**: No text inserted, audio discarded, returns to idle
+- **State Checks**: Callbacks verify cancellation state before proceeding
+
+#### 🎨 Visual Recording Overlay
+- **Animated Waveform**: Real-time voice visualization with 35 bars
+- **Cyan → Purple Gradient**: Beautiful color progression
+- **Amplitude-Based Brightness**: Bars brighten up to 40% with volume
+- **State Animations**: 
+  - 🔴 Recording: Pulsing red dot + animated waveform
+  - ⏳ Processing: Rotating spinner arc
+  - ✅ Complete: Green checkmark (500ms)
+  - ❌ Cancelled: Red X (500ms)
+- **Non-Intrusive**: No focus stealing, transparent to input
+- **Bottom-Center**: Positioned 60px from bottom
+- **Thread-Safe**: PyQt6 signals/slots for cross-thread updates
+- **Smooth Animations**: 200ms fade in/out, 30 FPS updates
+
+#### 🎯 Menu Bar Only App
+- **No Dock Icon**: Uses NSApplicationActivationPolicyAccessory
+- **Pure Menu Bar**: Appears only in menu bar (🎤 icon)
+- **Not in Cmd+Tab**: Doesn't appear in app switcher
+- **Professional UX**: Clean, non-intrusive presence
+
+#### 🤖 AI Enhancement
+- **Auto Language Detection**: Distinguishes English from other languages
+- **Smart Enhancement**: Punctuation, grammar, filler word removal for English
+- **Direct Paste Non-English**: No AI processing for non-English text
+- **4 Enhancement Styles**: Standard, Professional, Casual, Technical
+- **Local LLM**: Llama 3.2 1B (completely private)
+- **Optional**: Can be disabled in settings
+
+### Changed
+
+#### 🔧 Core Improvements
+- **TextInsertionManager**: Changed return type from `bool` to `dict` with status
+- **Status Values**: `'inserted'`, `'clipboard_only'`, `'failed'`
+- **No Clipboard Restore**: No longer restores original clipboard content
+- **MenuBarController**: Added history management and clipboard feedback
+- **OverlayWindow**: Added `STATE_CANCELLED` state
+- **OverlayManager**: Added `show_cancelled()` signal/slot
+
+### Fixed
+- **Menu Initialization**: Fixed rumps menu initialization order for history submenu
+- **Thread Safety**: All overlay updates via PyQt6 signals (no crashes)
+- **Focus Stealing**: Overlay uses SplashScreen window type (no focus theft)
+- **Cursor Movement**: Overlay completely transparent to input
+
+### Technical Details
+- **New Files**:
+  - `Models/TranscriptionHistory.py`: History management class
+  - `Core/AmplitudeAnalyzer.py`: Real-time amplitude calculation
+  - `UI/OverlayWindow.py`: PyQt6 visual overlay
+  - `UI/OverlayManager.py`: Thread-safe overlay coordinator
+  - `UI/WaveformRenderer.py`: Animated waveform drawing
+- **Dependencies Added**:
+  - PyQt6>=6.5.0 (visual overlay)
+- **Performance**:
+  - 30 FPS waveform updates
+  - 200ms fade animations
+  - <50ms clipboard copy latency
+
+---
+
 ## [2.0.0] - 2025-09-30
 
 ### 🚀 Major Release: VS Code Integration + Hybrid Architecture
@@ -40,7 +127,7 @@ This is a **major release** that transforms Hey Mike! from a standalone macOS di
 - `heymike.searchCode` - Search codebase
 - `heymike.switchToSmartMode` - Switch to Smart Mode (Cmd+Opt+1)
 - `heymike.switchToActionMode` - Switch to Action Mode (Cmd+Opt+2)
-- `heymike.showQuickPick` - Show quick actions menu
+- `scripts/heymike.showQuickPick` - Show quick actions menu
 - `heymike.openSettings` - Open extension settings
 
 #### Configuration Settings (12 total)
@@ -54,8 +141,8 @@ This is a **major release** that transforms Hey Mike! from a standalone macOS di
 - `heymike.enhancementStyle` - Text style (4 options)
 - `heymike.currentMode` - Active mode (smart/action)
 - `heymike.alwaysRaw` - Disable AI enhancement (default: false)
-- `heymike.showOverlays` - Show explanation overlays (default: true)
-- `heymike.showStatusBar` - Show status bar item (default: true)
+- `scripts/heymike.showOverlays` - Show explanation overlays (default: true)
+- `scripts/heymike.showStatusBar` - Show status bar item (default: true)
 
 #### Architecture Components
 - **BackendClient** - WebSocket connection management

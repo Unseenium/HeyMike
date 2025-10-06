@@ -1,350 +1,179 @@
 # Hey Mike!
 
-[![GitHub](https://img.shields.io/badge/GitHub-Unseenium%2FHeyMike-blue.svg)](https://github.com/Unseenium/HeyMike)
-[![Version](https://img.shields.io/badge/Version-2.0-brightgreen.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/Version-1.0.0-brightgreen.svg)](CHANGELOG.md)
 [![macOS](https://img.shields.io/badge/macOS-12.0+-blue.svg)](https://developer.apple.com/macos/)
-[![Python](https://img.shields.io/badge/Python-3.8+-green.svg)](https://www.python.org/)
 [![Apple Silicon](https://img.shields.io/badge/Apple%20Silicon-M1%2FM2%2FM3-orange.svg)](https://en.wikipedia.org/wiki/Apple_silicon)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![AI Powered](https://img.shields.io/badge/AI-Powered-purple.svg)](https://openai.com/research/whisper)
-[![Unseenium](https://img.shields.io/badge/Made%20by-Unseenium-red.svg)](https://github.com/Unseenium)
 
-🎤 **Voice dictation that actually makes sense.** Multi-mode AI transcription that's completely private, lightning fast, and works in 99+ languages.
-
-> **🚀 v2.0 Released (Sept 2025)**: VS Code Integration + Hybrid Architecture! Auto-start backend, live status bar, and seamless voice coding in VS Code. See [CHANGELOG](CHANGELOG.md).
-
-## ✨ What Makes Hey Mike! Amazing
-
-- **🎯 Two Powerful Modes**: Smart (auto-enhances English), or Action (voice commands)
-- **⌨️ Instant Mode Switching**: `⌥⌘1/2` hotkeys to switch modes on the fly
-- **🌍 True Multilingual**: Supports 99+ languages - Tamil, Japanese, Spanish, you name it
-- **✨ Smart AI Enhancement**: Automatically cleans up English text with punctuation, grammar, and removes filler words
-- **🔒 Completely Private**: Your voice never leaves your Mac - 100% offline processing (even the AI!)
-- **⚡ Lightning Fast**: Optimized for Apple Silicon with near-instant transcription
-- **🎨 Beautiful Interface**: Clean menu bar app with mode indicators
-- **🧠 Smart Models**: Choose from 5 Whisper models + 3 LLM models + 4 enhancement styles
-- **📱 Native macOS**: Works with any app - TextEdit, Slack, Email, IDE, Terminal
-- **🎯 Precision**: >98% accuracy that gets better the more you use it
-
-## 🚀 What's New in v2.0 (Sept 2025)
-
-### 🔌 VS Code Integration
-- **Full VS Code Extension** - Deep integration with VS Code for seamless voice coding
-- **Auto-Start Backend** - Extension automatically starts Python backend if not running
-- **Live Status Bar** - See recording/processing status with animations (🔴 Recording, ⠋ Processing)
-- **Quick Pick Menu** - Fast access to commands and settings (click status bar icon)
-- **Settings Sync** - Configure models and settings directly in VS Code
-
-### 🌉 Hybrid Architecture
-- **Dual UI System** - macOS menu bar + VS Code status bar (synchronized!)
-- **Standalone Mode** - Backend still works independently without VS Code
-- **WebSocket Bridge** - Real-time communication on port 8765
-- **Process Monitoring** - Backend logs visible in VS Code Debug Console
-- **Smart Reconnection** - Handles backend crashes and restarts gracefully
-
-### 🎯 Enhanced Features
-- **7 VS Code Commands** - Start recording, explain code, search, switch modes, settings
-- **12 Configuration Options** - Full control over backend, models, and behavior
-- **Backend API** - HTTP REST API for settings and LLM requests
-- **State Synchronization** - Recording, processing, and mode changes broadcast everywhere
-
-### 📦 Installation (VS Code)
-```bash
-# 1. Install Python backend dependencies
-cd HeyMike
-pip install -r requirements.txt
-
-# 2. Open VS Code extension folder
-cd vscode-extension
-code .
-
-# 3. Press F5 to test (auto-starts backend!)
-# Or: Install from VSIX (coming soon)
-```
-
-**[See full v2.0 docs →](vscode-extension/README.md)**
+**AI-powered voice dictation for macOS.** Fast, private, and works in 99+ languages.
 
 ---
 
-## 🆕 What's New in v1.5 (Sept 2025)
+## ✨ Key Features
 
-### ✨ Smart Mode with AI Enhancement
-- **Auto-detects English** and enhances with AI (punctuation, grammar, filler word removal)
-- **Direct paste for non-English** - works seamlessly with 99+ languages
-- **4 enhancement styles**: Standard, Professional, Casual, Technical
-- **Powered by local LLM** (Llama 3.2 1B) - completely private!
-
-### 🐛 Critical Bug Fixes
-- **5-minute recordings**: Increased from 30s limit (no more crashes!)
-- **4-8x less memory**: Efficient buffer management
-- **100MB safety limit**: Prevents out-of-memory crashes
-- **Warning at 4 minutes**: Get notified before auto-stop
-- **Complete cleanup**: No more memory leaks
-
-### 🎯 Simplified UX
-- **Two modes** (was 3): Smart + Action
-- **Better hotkeys**: `⌥⌘1` (Smart) / `⌥⌘2` (Action)
-- **Mode indicators**: 📝 (Smart) / ⚡ (Action) in menu bar
-- **Auto-detection**: No manual language switching needed
-
-[See full changelog →](CHANGELOG.md)
+- **🎨 Visual Overlay** - Animated waveform shows your voice in real-time
+- **✨ AI Enhancement** - Auto-adds punctuation, grammar, removes filler words
+- **📋 Never Lose Text** - Always copied to clipboard + smart auto-insert
+- **🌍 99+ Languages** - Tamil, Japanese, Spanish, English, and more
+- **🔒 100% Private** - All processing on-device, nothing sent to cloud
+- **⚡ Lightning Fast** - Apple Silicon optimized, near-instant transcription
 
 ---
 
-## 🖥️ What You Need
+## 🚀 Installation
 
-- **macOS 12.0+** with **Apple Silicon** (M1/M2/M3) - The magic happens here
-- **Python 3.8+** - Don't worry, setup is automatic
-- **200MB - 2GB RAM** - Depending on which AI model you choose
-- **Microphone permission** - So Hey Mike! can hear you
-- **Accessibility permission** - So it can type for you
+### Option 1: DMG Installer (Recommended)
 
-## 🚀 Get Started in 3 Minutes
+1. Download `HeyMike-v1.0.0.dmg` from [Releases](https://github.com/Unseenium/HeyMike/releases)
+2. Open DMG and drag "Hey Mike!" to Applications
+3. Launch from Spotlight (Cmd+Space → "Hey Mike")
+4. Grant Microphone & Accessibility permissions
 
-**1. Install Dependencies**
+**That's it!** No Python, no terminal required.
+
+### Option 2: Run from Source
+
 ```bash
-# Install system requirements
+# Install dependencies
 brew install portaudio ffmpeg
-```
-
-**2. Get Hey Mike!**
-```bash
-git clone https://github.com/Unseenium/HeyMike.git
-cd HeyMike
-
-# Install Python dependencies
 pip install -r requirements.txt
-```
 
-**3. Grant Permissions**
-- Open **System Preferences → Security & Privacy → Privacy**
-- Add **Terminal** to both **Microphone** and **Accessibility**
-
-**4. Launch Hey Mike!**
-```bash
+# Launch
 python main.py
 ```
 
-**That's it!** 🎉 Look for the 🎤 icon in your menu bar.
+**First run:** Downloads AI models (~1.2GB, one-time download)
 
-**Note:** On first run, Hey Mike! will download:
-- Whisper model (~39MB-1.5GB depending on model)
-- LLM for text enhancement (~800MB)
-This only happens once!
+---
 
-## 🎯 How to Use Hey Mike!
+## 🎯 Quick Start
 
-### Choose Your Mode First
+### Basic Usage
 
-Hey Mike! has **two modes** for different use cases:
+1. Look for the microphone icon in your menu bar
+2. Press **Cmd+Shift+Space** to start recording
+3. Speak naturally
+4. Press **Cmd+Shift+Space** to stop
+5. Text appears instantly with perfect punctuation!
 
-**📝 Smart Mode** (`⌥⌘1`) - **Default**
-- **Automatically enhances English** with AI cleanup (punctuation, grammar, removes filler words)
-- **Direct paste for non-English** (Tamil, Japanese, Spanish, etc.)
-- **Auto-detects language** - no manual switching needed!
-- Perfect for: Emails, documents, multilingual notes, professional writing
-- **Optional**: Disable AI enhancement in Settings → "Always use raw transcription"
+### Keyboard Shortcuts
 
-**⚡ Action Mode** (`⌥⌘2`) - *Coming Soon*
-- Voice commands to control your Mac
-- "Open README", "Search for bug", etc.
-- Perfect for: Hands-free coding, automation
+| Key | Action |
+|-----|--------|
+| **Cmd+Shift+Space** | Start/stop recording |
+| **Esc** | Cancel recording |
 
-**The menu bar icon shows your current mode:** 📝 (Smart) / ⚡ (Action)
+### Menu Features
 
-### Recording is Simple
+- **📋 Recent Transcriptions** - Access last 10 recordings
+- **⚙️ Settings** - Choose AI models, hotkeys, enhancement style
+- **🌍 Language** - Switch between 99+ languages
 
-1. **Choose your mode** (press `⌥⌘1` for Smart, `⌥⌘2` for Action)
-2. **Position your cursor** where you want text
-3. **Press ⌘⇧Space** to start recording (icon turns 🔴)
-4. **Speak naturally** - don't worry about filler words!
-5. **Press ⌘⇧Space again** to stop
-6. **Watch the magic** - text appears instantly!
+---
 
-### First Time Setup
-- Hey Mike! downloads AI models on first launch (~2GB total)
-- The menu bar shows ✅ when ready
-- Start in **Smart Mode** (📝) - it automatically handles any language!
+## 💡 How It Works
 
-### ✨ See Smart Mode in Action
+**Recording:**
+- Visual overlay appears with animated waveform
+- Speak as long as you want (up to 5 minutes)
+- Press Esc anytime to cancel
 
-**Smart Mode - Non-English** (auto-detected):
+**Transcription:**
+- Whisper AI transcribes your speech on-device
+- Auto-detects English and enhances with local LLM
+- Other languages paste directly without enhancement
+
+**Insertion:**
+- Text auto-inserts at cursor
+- Always copied to clipboard as backup
+- Access history from menu bar
+
+---
+
+## 🖥️ Requirements
+
+- **macOS 12.0+** with **Apple Silicon** (M1/M2/M3/M4)
+- **200MB - 2GB RAM** (depending on model size)
+- **Microphone** and **Accessibility** permissions
+
+---
+
+## 📚 Documentation
+
+- **[User Guide](docs/user-guide.md)** - Complete usage guide
+- **[API Documentation](docs/api.md)** - For developers
+- **[Architecture](docs/architecture.md)** - Technical design
+- **[Installation Guide](docs/installation.md)** - Detailed setup
+- **[Changelog](CHANGELOG.md)** - Version history
+
+---
+
+## 🛠️ Development
+
+### Build from Source
+
+```bash
+# Build .app bundle
+pyinstaller heymike.spec --clean
+
+# Create DMG installer
+./scripts/create_macos_dmg.sh
 ```
-You say: "வேண்டாம் சரி, சரி, சரி"
-Result:  "வேண்டாம் சரி, சரி, சரி"  ✅ Perfect Tamil! (direct paste)
-```
 
-**Smart Mode - English** (auto-enhanced):
-```
-You say: "hey um send that file like the one from yesterday you know"
-Result:  "Hey, send that file, the one from yesterday."  ✨ AI cleaned!
-```
+See [docs/build-process.md](docs/build-process.md) for details.
 
-**Why it matters:** This is what makes Hey Mike! better than macOS dictation - ONE mode that handles everything!
-
-## ⚙️ Customize Hey Mike!
-
-### Menu Bar Controls
-Click the icon (📝/⚡) to access:
-- **🎯 Transcription Mode**: Switch between Smart or Action modes
-- **🧠 Models**: Choose your Whisper model (5 options from lightning-fast to ultra-accurate)
-- **✨ Text Enhancement**: 
-  - Choose AI style (standard/professional/casual/technical)
-  - Toggle "Always use raw transcription" to disable AI enhancement
-- **⌨️ Hotkey**: Change your recording shortcut  
-- **🎙️ Audio**: Select your microphone
-- **🌍 Language**: Set your preferred language (or leave on auto-detect)
-
-### Hotkey Reference
-- **⌥⌘1**: Switch to Smart Mode (📝)
-- **⌥⌘2**: Switch to Action Mode (⚡)
-- **⌘⇧Space**: Start/Stop recording (default, customizable)
-- **Esc**: Cancel recording
-
-### Pro Tips for Perfect Results
-
-**Smart Mode Handles Everything:**
-- **Just speak naturally** - AI automatically cleans up English ("um", "uh", filler words)
-- **Multilingual? No problem** - Smart mode detects non-English and pastes directly
-- **Want raw text?** Toggle "Always use raw transcription" in Text Enhancement settings
-
-**Speak Naturally:**
-- **Don't overthink it** - AI handles messy speech for English
-- **Quiet environment** helps, but Hey Mike! handles background noise well
-- **Switch languages freely** - Smart mode adapts automatically
-
-**Choose Your Whisper Model:**
-  - **Tiny**: Lightning fast (~1s, 39MB) - great for quick notes
-  - **Base**: Balanced (~2s, 74MB) - perfect for most use
-  - **Large**: Ultra accurate (~5s, 1.5GB) - for important documents
-
-**Choose Your Enhancement Style** (Smart mode for English only):
-  - **Standard**: Clean and natural (default)
-  - **Professional**: Formal business tone
-  - **Casual**: Friendly, conversational
-  - **Technical**: Technical writing style
-
-**Other Tips:**
-- **📍 Position matters** - click where you want text before recording
-- **🌐 Language detection** - Smart mode auto-detects English vs non-English
-
-## 🔒 Your Privacy is Sacred
-
-**Hey Mike! keeps your voice completely private:**
-
-- **🏠 Everything stays local** - your voice never leaves your Mac
-- **🚫 Zero data collection** - we don't store, track, or transmit anything  
-- **✈️ Works offline** - no internet needed after setup
-- **🧠 Memory only** - audio processed and immediately forgotten
-- **👁️ Open source** - see exactly what the code does
-- **🛡️ No telemetry** - no usage tracking, no analytics, no spying
-
-**Your thoughts, your voice, your business. Period.**
-
-## Architecture
-
-The app is built using:
-- **Python + MLX Framework**: Optimized performance on Apple Silicon
-- **MLX Whisper**: OpenAI's Whisper models optimized for Apple Silicon  
-- **MLX LM**: Local Large Language Models for text enhancement
-- **rumps**: Lightweight menu bar interface framework
-- **PyAudio**: Professional audio capture and processing
-- **pynput**: Global hotkey detection for mode switching
-- **Accessibility APIs**: Universal text insertion across macOS
-- **Threading**: Async processing for responsive UI
-
-## Project Structure
+### Project Structure
 
 ```
 HeyMike/
-├── Core/
-│   ├── MLXWhisperManager.py      # MLX Whisper model integration
-│   ├── MLXLLMManager.py          # MLX LLM for text enhancement
-│   ├── TextEnhancer.py           # AI text cleanup and enhancement
-│   ├── HotkeyManager.py          # Global hotkey + mode switching
-│   ├── TextInsertionManager.py   # Text insertion via Accessibility APIs
-│   └── AudioManager.py           # Audio capture and processing
-├── UI/
-│   └── MenuBarController.py      # rumps-based menu bar interface
-├── Models/
-│   ├── WhisperModels/           # Downloaded Whisper model files
-│   ├── LLMModels/               # Downloaded LLM model files
-│   ├── RecognitionResult.py     # Transcription result handling
-│   └── AppSettings.py           # User configuration + mode persistence
-└── Resources/
-    ├── requirements.txt         # Python dependencies
-    └── assets/                  # Icons and resources
+├── Core/           # Audio, ML, text processing
+├── UI/             # Menu bar, visual overlay
+├── Models/         # Settings, history
+├── docs/           # Documentation (user + developer)
+└── main.py         # Entry point
 ```
 
-## Development
+---
 
-### Building from Source
-1. Clone the repository
-2. Install Python dependencies: `pip install -r requirements.txt`
-3. Run the application: `python main.py`
+## 🐛 Troubleshooting
 
-### Key Components
-- **MLXWhisperManager**: Handles MLX Whisper model loading and inference  
-- **MLXLLMManager**: Manages local LLM for text enhancement
-- **TextEnhancer**: AI-powered text cleanup with multiple styles
-- **HotkeyManager**: Global keyboard shortcuts + multi-mode switching
-- **TextInsertionManager**: Universal text insertion via Accessibility APIs
-- **MenuBarController**: Coordinates UI, modes, and user interactions
+**Menu bar icon doesn't appear?**  
+→ Check Microphone permission in System Settings
 
-### Development Dependencies
-- `mlx-whisper`: MLX-optimized Whisper models
-- `mlx-lm`: MLX-optimized Large Language Models
-- `rumps`: Menu bar application framework
-- `pyaudio`: Audio input/output
-- `pynput`: Global hotkey detection
-- `pyobjc`: macOS system integration
+**Text doesn't insert?**  
+→ Check Accessibility permission  
+→ Text is always in clipboard - press Cmd+V
 
-## Troubleshooting
+**Models won't download?**  
+→ Check internet connection  
+→ Requires ~1.2GB free space
 
-### Permissions Issues
-If the app isn't working properly, check that you've granted the required permissions:
+**Full troubleshooting:** See [docs/user-guide.md](docs/user-guide.md#troubleshooting)
 
-1. **System Preferences → Security & Privacy → Privacy**
-2. **Microphone**: Ensure Terminal/Python is listed and enabled ✓
-3. **Accessibility**: Ensure Terminal/Python is listed and enabled ✓
-4. **Restart Hey Mike!** after granting permissions
+---
 
-### Model Loading Issues
-- **Internet connection**: Required for first-time model download
-- **Disk space**: Ensure sufficient space (39MB for tiny, 1.5GB for large)
-- **Apple Silicon**: MLX requires M1/M2/M3 chips
+## 🗺️ Roadmap
 
-### Audio Issues
-- **Test microphone**: Verify it works in other applications
-- **Check logs**: Look for "PyAudio initialized successfully"
-- **PortAudio**: Ensure installed with `brew install portaudio`
+- **Phase 1 (Q4 2025)**: ✅ Native app with visual overlay
+- **Phase 2 (Q1 2026)**: VS Code extension + Action Mode
+- **Phase 3 (Q2 2026)**: Code search, explanations, file navigation
 
-### Text Not Appearing
-- **Accessibility permissions**: Most common issue - check Terminal is enabled
-- **Cursor position**: Click in a text field before recording
-- **Try manual paste**: After recording, try Cmd+V manually
-- **Check logs**: Look for "Successfully inserted X characters"
+---
 
-### Performance Issues
-- **Model selection**: Use `tiny` for speed, `large` for accuracy
-- **Memory**: Close other applications if using large models
-- **Thermal throttling**: Ensure your Mac isn't overheating
+## 📄 License
 
-## License
+MIT License - See [LICENSE](LICENSE) for details.
 
-MIT License - Copyright © 2025 [Unseenium Inc.](https://github.com/Unseenium)
+---
 
-See [LICENSE](LICENSE) file for details.
+## 🙏 Acknowledgments
 
-## Support
+Built with:
+- [MLX](https://github.com/ml-explore/mlx) - Apple's ML framework
+- [Whisper](https://github.com/openai/whisper) - Speech recognition
+- [PyQt6](https://www.riverbankcomputing.com/software/pyqt/) - Visual overlay
+- [rumps](https://github.com/jaredks/rumps) - Menu bar
 
-- 🐛 **Found a bug?** [Open an issue](https://github.com/Unseenium/HeyMike/issues)
-- 💡 **Have a feature request?** [Start a discussion](https://github.com/Unseenium/HeyMike/discussions)
-- 📖 **Need help?** Check the troubleshooting section above
-- 🔧 **Want to contribute?** See [CONTRIBUTING.md](CONTRIBUTING.md)
+---
 
-## Links
-
-- 🏢 **Organization**: [Unseenium](https://github.com/Unseenium)
-- 🌐 **Website**: [unseenium.com](https://unseenium.com)
-- 📦 **Repository**: [github.com/Unseenium/HeyMike](https://github.com/Unseenium/HeyMike)
+**Made with ❤️ by [Unseenium](https://github.com/Unseenium)**

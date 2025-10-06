@@ -5,8 +5,14 @@
 
 import * as vscode from 'vscode';
 import { TranscriptionData, LLMResult } from '../types';
+import { NoteCapture } from './noteCapture';
 
 export class ActionRouter {
+    private noteCapture: NoteCapture;
+
+    constructor() {
+        this.noteCapture = new NoteCapture();
+    }
 
     /**
      * Handle transcription from backend
@@ -30,16 +36,9 @@ export class ActionRouter {
      * Handle Smart Mode transcription (insert text)
      */
     private async handleSmartMode(data: TranscriptionData) {
-        const editor = vscode.window.activeTextEditor;
-        if (!editor) {
-            vscode.window.showWarningMessage('No active editor to insert text');
-            return;
-        }
-
-        // Insert text at cursor position
-        await editor.edit(editBuilder => {
-            editBuilder.insert(editor.selection.active, data.text);
-        });
+        // Use clipboard + paste approach to work everywhere (editors, chat, etc.)
+        await vscode.env.clipboard.writeText(data.text);
+        await vscode.commands.executeCommand('editor.action.clipboardPasteAction');
 
         // Show notification
         vscode.window.setStatusBarMessage(
@@ -54,25 +53,29 @@ export class ActionRouter {
     private async handleActionMode(data: TranscriptionData) {
         console.log('[HeyMike] Interpreting action command:', data.text);
 
-        // Parse command from transcription
+        // Check if backend classified this as a note (from context.note)
+        if (data.context.note) {
+            console.log('[HeyMike] Note classification from backend:', data.context.note.type);
+            await this.captureBackendNote(data.context.note);
+            return;
+        }
+
+        // Parse command from transcription (for other actions like explain, search, etc.)
         const command = this.parseCommand(data.text);
 
         if (!command) {
             // Fallback: If we can't understand the command, just insert it as text
             console.log('[HeyMike] Command not recognized, falling back to text insertion');
 
-            // Insert as plain text (fallback behavior) - silently
-            const editor = vscode.window.activeTextEditor;
-            if (editor) {
-                await editor.edit(editBuilder => {
-                    editBuilder.insert(editor.selection.active, data.text);
-                });
-                // Just show status message, no warning popup
-                vscode.window.setStatusBarMessage(
-                    `✅ Inserted: ${data.text.substring(0, 50)}${data.text.length > 50 ? '...' : ''}`,
-                    3000
-                );
-            }
+            // Insert as plain text using clipboard (works in chat, editors, etc.)
+            await vscode.env.clipboard.writeText(data.text);
+            await vscode.commands.executeCommand('editor.action.clipboardPasteAction');
+
+            // Just show status message, no warning popup
+            vscode.window.setStatusBarMessage(
+                `✅ Inserted: ${data.text.substring(0, 50)}${data.text.length > 50 ? '...' : ''}`,
+                3000
+            );
             return;
         }
 
@@ -82,30 +85,26 @@ export class ActionRouter {
 
     /**
      * Parse voice command from text
+     * Note: Backend handles note detection via smart_detect_intent()
      */
     private parseCommand(text: string): { action: string, target?: string } | null {
         const lower = text.toLowerCase().trim();
 
-        // Explain commands
+        // Explain commands (future feature)
         if (lower.includes('explain')) {
             return { action: 'explain' };
         }
 
-        // Search commands
+        // Search commands (future feature)
         if (lower.includes('search') || lower.includes('find')) {
             const searchTerm = lower.replace(/^(search|find)\s+/i, '').trim();
             return { action: 'search', target: searchTerm };
         }
 
-        // Navigate commands
+        // Navigate commands (future feature)
         if (lower.includes('open') || lower.includes('go to')) {
             const fileTerm = lower.replace(/^(open|go to)\s+/i, '').trim();
             return { action: 'navigate', target: fileTerm };
-        }
-
-        // Note capture commands
-        if (lower.includes('note') || lower.includes('bug') || lower.includes('todo')) {
-            return { action: 'note', target: text };
         }
 
         return null;
@@ -113,6 +112,7 @@ export class ActionRouter {
 
     /**
      * Execute parsed command
+     * Note: Voice note capture is handled by backend's smart_detect_intent()
      */
     private async executeCommand(command: { action: string, target?: string }, data: TranscriptionData) {
         try {
@@ -127,10 +127,6 @@ export class ActionRouter {
 
                 case 'navigate':
                     await this.navigateToFile(command.target || '');
-                    break;
-
-                case 'note':
-                    await this.captureNote(command.target || '');
                     break;
 
                 default:
@@ -202,32 +198,97 @@ export class ActionRouter {
     }
 
     /**
-     * Capture voice note
+     * Capture voice note with full context
+     * (Legacy method - kept for potential direct use)
      */
-    private async captureNote(noteText: string) {
-        if (!noteText) {
-            vscode.window.showWarningMessage('No note text provided');
-            return;
+    private async captureVoiceNote(note: any) {
+        try {
+            // Extract code context
+            const noteWithContext = await this.noteCapture.extractContext(note);
+
+            // Save to NOTES.md
+            await this.noteCapture.saveNote(noteWithContext);
+
+            // Show confirmation
+            const icon = this.getNoteIcon(note.type);
+            vscode.window.showInformationMessage(
+                `${icon} Captured ${note.type}: ${note.description.substring(0, 50)}${note.description.length > 50 ? '...' : ''}`,
+                'Open Notes'
+            ).then(selection => {
+                if (selection === 'Open Notes') {
+                    this.noteCapture.openNotes();
+                }
+            });
+
+            console.log('[HeyMike] Voice note saved successfully');
+        } catch (error: any) {
+            vscode.window.showErrorMessage(`Failed to capture note: ${error.message}`);
+            console.error('[HeyMike] Note capture error:', error);
         }
+    }
 
-        // Determine note type
-        let noteType = 'note';
-        const lower = noteText.toLowerCase();
-        if (lower.includes('bug')) {
-            noteType = 'bug';
-        } else if (lower.includes('todo')) {
-            noteType = 'todo';
-        } else if (lower.includes('question')) {
-            noteType = 'question';
+    /**
+     * Capture note classified by backend (from NoteData in context)
+     */
+    private async captureBackendNote(noteData: any) {
+        try {
+            console.log('[HeyMike] Capturing backend-classified note:', noteData);
+
+            // Convert backend note data to frontend format
+            const note = {
+                type: noteData.type,
+                description: noteData.description,
+                timestamp: new Date(),
+                explicit: noteData.explicit || false
+            };
+
+            // Extract code context
+            const noteWithContext = await this.noteCapture.extractContext(note);
+
+            // Save to NOTES.md
+            await this.noteCapture.saveNote(noteWithContext);
+
+            // Show confirmation with detection method
+            const icon = this.getNoteIcon(note.type);
+            const confidenceText = noteData.confidence
+                ? ` (${Math.round(noteData.confidence * 100)}% confidence)`
+                : '';
+
+            vscode.window.showInformationMessage(
+                `${icon} Captured ${note.type}${confidenceText}: ${note.description.substring(0, 50)}${note.description.length > 50 ? '...' : ''}`,
+                'Open Notes'
+            ).then(selection => {
+                if (selection === 'Open Notes') {
+                    this.noteCapture.openNotes();
+                }
+            });
+
+            console.log('[HeyMike] Backend-classified note saved successfully');
+        } catch (error: any) {
+            vscode.window.showErrorMessage(`Failed to capture note: ${error.message}`);
+            console.error('[HeyMike] Note capture error:', error);
         }
+    }
 
-        const icon = noteType === 'bug' ? '🐛' : noteType === 'todo' ? '✅' : noteType === 'question' ? '❓' : '📝';
+    /**
+     * Get emoji icon for note type
+     */
+    private getNoteIcon(type: string): string {
+        const icons: { [key: string]: string } = {
+            bug: '🐛',
+            todo: '✅',
+            note: '📝',
+            question: '🤔',
+            enhancement: '✨'
+        };
+        return icons[type] || '📝';
+    }
 
-        vscode.window.showInformationMessage(
-            `${icon} Captured ${noteType}: ${noteText.substring(0, 50)}${noteText.length > 50 ? '...' : ''}`
-        );
-
-        // TODO: Implement note storage (v2.0 feature)
+    /**
+     * Open NOTES.md file
+     */
+    async openNotes() {
+        await this.noteCapture.openNotes();
     }
 
     /**

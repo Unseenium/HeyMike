@@ -22,13 +22,25 @@ class MLXWhisperManager:
         'large': {'size': '1550MB', 'speed': 'slowest', 'accuracy': 'best'}
     }
     
-    def __init__(self, model_dir: str = "Models/WhisperModels"):
+    def __init__(self, model_dir: str = None):
         """
         Initialize MLX Whisper Manager
         
         Args:
-            model_dir: Directory to store downloaded models
+            model_dir: Directory to store downloaded models (default: ~/Library/Application Support/HeyMike/Models/Whisper)
         """
+        import sys
+        from pathlib import Path
+        
+        # Use proper macOS location for bundled apps
+        if model_dir is None:
+            if getattr(sys, 'frozen', False):
+                # Bundled app: use Application Support (writable)
+                model_dir = str(Path.home() / "Library" / "Application Support" / "HeyMike" / "Models" / "Whisper")
+            else:
+                # Development: use project directory
+                model_dir = "Models/WhisperModels"
+        
         self.model_dir = model_dir
         self.current_model = None
         self.current_model_name = None
@@ -50,6 +62,7 @@ class MLXWhisperManager:
         
         # Ensure model directory exists
         os.makedirs(model_dir, exist_ok=True)
+        self.logger.info(f"Model cache directory: {model_dir}")
         
         # Callbacks for status updates
         self.on_model_loading: Optional[Callable[[str], None]] = None

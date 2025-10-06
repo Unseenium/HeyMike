@@ -8,6 +8,7 @@ import sys
 import os
 import logging
 import argparse
+import fcntl
 from pathlib import Path
 
 # Add project directories to Python path
@@ -18,15 +19,23 @@ sys.path.insert(0, str(project_root / "Models"))
 
 def setup_logging(log_level: str = "INFO", log_file: str = None):
     """
-    Setup logging configuration
+    Setup logging configuration with rotation
     
     Args:
         log_level: Logging level (DEBUG, INFO, WARNING, ERROR)
         log_file: Optional log file path
     """
-    # Create logs directory if it doesn't exist
-    log_dir = project_root / "logs"
-    log_dir.mkdir(exist_ok=True)
+    from logging.handlers import RotatingFileHandler
+    
+    # Determine log directory based on running mode
+    if getattr(sys, 'frozen', False):
+        # Bundled app: use standard macOS location
+        log_dir = Path.home() / "Library" / "Logs" / "HeyMike"
+    else:
+        # Development: use project directory
+        log_dir = project_root / "logs"
+    
+    log_dir.mkdir(parents=True, exist_ok=True)
     
     # Configure logging format
     log_format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -35,11 +44,22 @@ def setup_logging(log_level: str = "INFO", log_file: str = None):
     handlers = [logging.StreamHandler(sys.stdout)]
     
     if log_file:
-        handlers.append(logging.FileHandler(log_file))
+        # Use rotating file handler: max 10MB, keep 5 backups
+        file_handler = RotatingFileHandler(
+            log_file,
+            maxBytes=10 * 1024 * 1024,  # 10MB
+            backupCount=5
+        )
+        handlers.append(file_handler)
     else:
-        # Default log file
+        # Default log file with rotation
         default_log_file = log_dir / "heymike.log"
-        handlers.append(logging.FileHandler(default_log_file))
+        file_handler = RotatingFileHandler(
+            default_log_file,
+            maxBytes=10 * 1024 * 1024,  # 10MB
+            backupCount=5
+        )
+        handlers.append(file_handler)
     
     # Configure logging
     logging.basicConfig(
@@ -100,6 +120,11 @@ def check_dependencies():
         True if all dependencies are available, False otherwise
     """
     logger = logging.getLogger(__name__)
+    
+    # Skip dependency check if running as PyInstaller bundle
+    if getattr(sys, 'frozen', False):
+        logger.info("Running as bundled app - skipping dependency check")
+        return True
     
     required_modules = [
         'mlx_whisper',
@@ -174,15 +199,71 @@ def main():
     parser.add_argument("--test", action="store_true",
                        help="Run system tests and exit")
     
-    args = parser.parse_args()
+    # Use parse_known_args() to allow multiprocessing internal arguments
+    # (needed for PyInstaller bundled app)
+    args, unknown = parser.parse_known_args()
+    if unknown and not getattr(sys, 'frozen', False):
+        # Only warn about unknown args when running from source
+        logger = logging.getLogger(__name__)
+        logger.warning(f"Unknown arguments: {unknown}")
     
     # Setup logging
     setup_logging(args.log_level, args.log_file)
     logger = logging.getLogger(__name__)
     
+    # Prevent multiple instances with a lock file
+    lock_file = Path.home() / '.heymike.lock'
+    lock_fp = None
+    
+    # Check if lock file exists and if the process is still running
+    if lock_file.exists():
+        try:
+            with open(lock_file, 'r') as f:
+                old_pid = int(f.read().strip())
+            # Check if process is still running
+            try:
+                os.kill(old_pid, 0)  # Signal 0 just checks if process exists
+                logger.error("Hey Mike! is already running!")
+                print("⚠️  Hey Mike! is already running. Check your menu bar for the 🎤 icon.")
+                sys.exit(1)
+            except OSError:
+                # Process is dead, remove stale lock file
+                logger.info(f"Removing stale lock file (PID {old_pid} not running)")
+                lock_file.unlink()
+        except (ValueError, FileNotFoundError):
+            # Invalid or missing lock file, remove it
+            logger.info("Removing invalid lock file")
+            try:
+                lock_file.unlink()
+            except FileNotFoundError:
+                pass
+    
+    # Acquire lock
+    try:
+        lock_fp = open(lock_file, 'w')
+        fcntl.flock(lock_fp.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        lock_fp.write(str(os.getpid()))
+        lock_fp.flush()
+        logger.info("Single instance lock acquired")
+    except (IOError, OSError):
+        logger.error("Hey Mike! is already running!")
+        print("⚠️  Hey Mike! is already running. Check your menu bar for the 🎤 icon.")
+        sys.exit(1)
+    
     logger.info("Starting Hey Mike!: MLX Whisper Dictation System")
     logger.info(f"Python version: {sys.version}")
     logger.info(f"Project root: {project_root}")
+    
+    # Initialize PyQt6 QApplication for visual overlay (Phase 1)
+    qt_app = None
+    try:
+        from PyQt6.QtWidgets import QApplication
+        qt_app = QApplication(sys.argv)
+        qt_app.setQuitOnLastWindowClosed(False)  # Don't quit when overlay closes
+        
+        logger.info("PyQt6 initialized - Visual overlay enabled")
+    except ImportError:
+        logger.info("PyQt6 not available - Visual overlay disabled")
     
     # Create necessary directories
     create_assets_directory()

@@ -33,3 +33,6 @@ torch>=2.0.0
 tqdm>=4.65.0
 huggingface-hub>=0.20.0
 
+# Visual overlay (Phase 1)
+PyQt6>=6.5.0
+

@@ -33,18 +33,6 @@ export class QuickPickMenu {
             command: 'heymike.switchToActionMode'
         },
         {
-            label: '$(question) Explain Code',
-            description: 'Explain selected code',
-            icon: 'question',
-            command: 'heymike.explainCode'
-        },
-        {
-            label: '$(search) Search Code',
-            description: 'Search codebase by description',
-            icon: 'search',
-            command: 'heymike.searchCode'
-        },
-        {
             label: '$(gear) Settings',
             description: 'Configure Hey Mike!',
             icon: 'gear',

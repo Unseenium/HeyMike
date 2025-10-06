@@ -10,6 +10,23 @@ import logging
 import time
 from typing import Optional, Callable, List
 import queue
+import sys
+import os
+
+# Add parent directory to path for overlay imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# Import overlay components (with fallback if PyQt6 not available)
+try:
+    from UI.OverlayWindow import VoiceOverlay
+    from Core.AmplitudeAnalyzer import AmplitudeAnalyzer
+    OVERLAY_AVAILABLE = True
+except ImportError as e:
+    print(f"Visual overlay not available: {e}")
+    print("Install PyQt6 with: pip install PyQt6>=6.5.0")
+    OVERLAY_AVAILABLE = False
+    VoiceOverlay = None
+    AmplitudeAnalyzer = None
 
 class AudioManager:
     """Manages audio recording and processing for speech recognition"""
@@ -46,6 +63,11 @@ class AudioManager:
         self.on_recording_stop: Optional[Callable[[np.ndarray], None]] = None
         self.on_audio_level: Optional[Callable[[float], None]] = None
         self.on_error: Optional[Callable[[str], None]] = None
+        
+        # Visual overlay components (Phase 1)
+        # Note: Overlay must be created on main thread, so we just hold a reference here
+        self.overlay = None
+        self.amplitude_analyzer = None
         
         # Initialize PyAudio
         self._initialize_audio()
@@ -174,6 +196,8 @@ class AudioManager:
             
             self.logger.info("Recording started")
             
+            # Note: Don't show overlay here - it will be shown by MenuBarController on main thread
+            
             if self.on_recording_start:
                 self.on_recording_start()
             
@@ -281,12 +305,31 @@ class AudioManager:
                 self.audio_buffer.append(audio_chunk.copy())  # Copy to avoid data corruption
                 self.current_buffer_size += chunk_size
             
-            # Calculate audio level for visual feedback
+            # Send to amplitude analyzer for visual overlay
+            if self.amplitude_analyzer:
+                try:
+                    self.amplitude_analyzer.process_chunk(in_data)
+                except Exception as e:
+                    # Don't let overlay errors crash recording
+                    pass
+            
+            # Calculate audio level for visual feedback (legacy callback)
             if self.on_audio_level:
                 audio_level = np.abs(audio_chunk).mean()
                 self.on_audio_level(float(audio_level))
         
         return (None, pyaudio.paContinue)
+    
+    def _on_amplitude_update(self, amplitude: float):
+        """
+        Callback from AmplitudeAnalyzer to update overlay
+        
+        Args:
+            amplitude: Normalized amplitude (0.0-1.0)
+        """
+        if self.overlay:
+            # Overlay manager handles thread-safe updates via signals
+            self.overlay.update_amplitude(amplitude)
     
     def _recording_monitor(self):
         """Monitor recording for silence detection and auto-stop"""
@@ -340,10 +383,34 @@ class AudioManager:
         self.silence_duration = duration
         self.logger.debug(f"Silence duration set to: {duration}s")
     
+    def set_overlay(self, overlay):
+        """
+        Set overlay reference (must be created on main thread)
+        
+        Args:
+            overlay: VoiceOverlay instance created on main thread
+        """
+        self.overlay = overlay
+        if overlay and OVERLAY_AVAILABLE:
+            try:
+                self.amplitude_analyzer = AmplitudeAnalyzer(
+                    callback=self._on_amplitude_update
+                )
+                self.logger.info("Amplitude analyzer initialized for overlay")
+            except Exception as e:
+                self.logger.warning(f"Failed to initialize amplitude analyzer: {e}")
+    
     def cleanup(self):
         """Clean up audio resources"""
         if self.is_recording:
             self.stop_recording()
+        
+        # Cleanup overlay
+        if self.overlay:
+            try:
+                self.overlay.hide_overlay()
+            except Exception as e:
+                self.logger.debug(f"Error hiding overlay during cleanup: {e}")
         
         if self.pyaudio_instance:
             self.pyaudio_instance.terminate()
