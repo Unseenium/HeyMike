@@ -2,12 +2,19 @@
  * Type definitions for Hey Mike! VS Code extension
  */
 
+export interface NoteData {
+    type: 'bug' | 'todo' | 'question' | 'note' | 'enhancement';
+    description: string;
+    explicit: boolean;  // true if user specified type explicitly
+}
+
 export interface TranscriptionData {
     text: string;
     mode: 'smart' | 'action';
     context: {
         timestamp: number;
         language?: string;
+        note?: NoteData;  // Optional note classification from backend
         [key: string]: any;
     };
 }

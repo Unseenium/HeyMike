@@ -22,6 +22,9 @@ class TextInsertionManager:
         self.on_insertion_failed: Optional[Callable[[str], None]] = None
         self.on_error: Optional[Callable[[str], None]] = None
         
+        # Clipboard behavior (Hybrid approach: always keep text in clipboard)
+        self.always_copy_to_clipboard = True  # Option 5: Never lose text
+        
         # Check accessibility permissions on initialization
         self._check_accessibility_permissions()
     
@@ -48,9 +51,9 @@ class TextInsertionManager:
             self.logger.error(f"Failed to check accessibility permissions: {str(e)}")
             return False
     
-    def insert_text(self, text: str, method: str = 'auto') -> bool:
+    def insert_text(self, text: str, method: str = 'auto') -> dict:
         """
-        Insert text at the current cursor position
+        Insert text at the current cursor position (Hybrid approach: always copies to clipboard)
         
         Args:
             text: Text to insert
@@ -60,81 +63,114 @@ class TextInsertionManager:
                    - 'auto': Choose best method based on text length
             
         Returns:
-            True if text was inserted successfully, False otherwise
+            dict with status:
+                - {'status': 'inserted', 'text': text} - Text inserted successfully (also in clipboard)
+                - {'status': 'clipboard_only', 'text': text} - Failed to insert, but in clipboard
+                - {'status': 'failed', 'text': text} - Complete failure
         """
         if not text:
             self.logger.warning("Empty text provided for insertion")
-            return False
+            return {'status': 'failed', 'text': ''}
         
         # Clean up the text
         text = text.strip()
         if not text:
-            return False
+            return {'status': 'failed', 'text': ''}
         
-        # Choose insertion method
+        # Step 1: ALWAYS copy to clipboard first (Hybrid approach)
+        clipboard_success = self._copy_to_clipboard_permanent(text)
+        if not clipboard_success:
+            self.logger.error("Failed to copy to clipboard")
+            return {'status': 'failed', 'text': text}
+        
+        self.logger.info(f"Text copied to clipboard ({len(text)} chars)")
+        
+        # Step 2: Try to auto-insert at cursor
+        insertion_success = False
+        
         if method == 'auto':
             # Try paste first, then typing if that fails
-            success = self._insert_via_clipboard(text)
-            if not success:
-                self.logger.info("Clipboard method failed, trying typing method")
-                success = self._insert_via_typing(text)
+            insertion_success = self._insert_via_paste_command(text)
+            if not insertion_success:
+                self.logger.info("Paste command failed, trying typing method")
+                insertion_success = self._insert_via_typing(text)
         elif method == 'paste':
-            success = self._insert_via_clipboard(text)
+            insertion_success = self._insert_via_paste_command(text)
         elif method == 'type':
-            success = self._insert_via_typing(text)
+            insertion_success = self._insert_via_typing(text)
         else:
             self.logger.error(f"Unknown insertion method: {method}")
-            return False
+            # Text is still in clipboard though
+            return {'status': 'clipboard_only', 'text': text}
         
-        if success:
-            self.logger.info(f"Successfully inserted {len(text)} characters using {method}")
+        # Step 3: Return status
+        if insertion_success:
+            self.logger.info(f"Successfully inserted {len(text)} characters using {method} (also in clipboard)")
             if self.on_text_inserted:
                 self.on_text_inserted(text)
-            return True
+            return {'status': 'inserted', 'text': text}
         else:
-            self.logger.warning(f"Failed to insert text using {method}")
+            self.logger.warning(f"Failed to insert text, but it's in clipboard for manual paste")
             if self.on_insertion_failed:
-                self.on_insertion_failed(f"Insertion failed using {method}")
-            return False
+                self.on_insertion_failed(f"Insertion failed - text in clipboard")
+            return {'status': 'clipboard_only', 'text': text}
     
-    def _insert_via_clipboard(self, text: str) -> bool:
+    def _copy_to_clipboard_permanent(self, text: str) -> bool:
         """
-        Insert text using clipboard and Cmd+V
+        Copy text to clipboard permanently (Hybrid approach: don't restore original)
         
         Args:
-            text: Text to insert
+            text: Text to copy
             
         Returns:
             True if successful, False otherwise
         """
         try:
-            # Get current clipboard content to restore later
             pasteboard = NSPasteboard.generalPasteboard()
-            original_content = pasteboard.stringForType_(NSStringPboardType)
-            
-            # Set text to clipboard
             pasteboard.clearContents()
-            pasteboard.setString_forType_(text, NSStringPboardType)
+            success = pasteboard.setString_forType_(text, NSStringPboardType)
             
-            # Small delay to ensure clipboard is set
+            if success:
+                self.logger.debug(f"Text copied to clipboard ({len(text)} chars)")
+                return True
+            else:
+                self.logger.error("Failed to set clipboard content")
+                return False
+            
+        except Exception as e:
+            self.logger.error(f"Clipboard copy failed: {str(e)}")
+            return False
+    
+    def _insert_via_paste_command(self, text: str) -> bool:
+        """
+        Insert text by sending Cmd+V (assumes text already in clipboard)
+        
+        Args:
+            text: Text to insert (for logging only, should already be in clipboard)
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            # Small delay to ensure clipboard is ready
             time.sleep(0.05)
             
             # Send Cmd+V to paste
             success = self._send_paste_command()
             
-            # Small delay before restoring clipboard
-            time.sleep(0.1)
-            
-            # Restore original clipboard content
-            if original_content:
-                pasteboard.clearContents()
-                pasteboard.setString_forType_(original_content, NSStringPboardType)
-            
             return success
             
         except Exception as e:
-            self.logger.error(f"Clipboard insertion failed: {str(e)}")
+            self.logger.error(f"Paste command failed: {str(e)}")
             return False
+    
+    def _insert_via_clipboard(self, text: str) -> bool:
+        """
+        DEPRECATED: Use _copy_to_clipboard_permanent + _insert_via_paste_command instead
+        Legacy method kept for compatibility
+        """
+        self.logger.warning("_insert_via_clipboard is deprecated, use new hybrid approach")
+        return self._insert_via_paste_command(text)
     
     def _insert_via_typing(self, text: str) -> bool:
         """

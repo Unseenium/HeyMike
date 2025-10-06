@@ -22,34 +22,39 @@ from MLXLLMManager import MLXLLMManager
 from TextEnhancer import TextEnhancer
 from VSCodeBridge import VSCodeBridge
 from AppSettings import AppSettings
+from NoteClassifier import NoteClassifier
+from TranscriptionHistory import TranscriptionHistory
 
 class HeyMikeApp(rumps.App):
     """Main Hey Mike! application with menu bar interface"""
     
     def __init__(self):
         """Initialize Hey Mike! application"""
-        # Check for icon file in multiple possible locations
-        icon_path = None
-        possible_icon_paths = [
-            "assets/icon.png",
-            "Assets/icon.png", 
-            "icon.png"
-        ]
+        # Set up logging first
+        self.logger = logging.getLogger(__name__)
         
-        for path in possible_icon_paths:
-            if os.path.exists(path):
-                icon_path = path
-                break
-        
+        # Use simple emoji icon - always visible, no custom icon needed
         super(HeyMikeApp, self).__init__(
             "Hey Mike!",
-            icon=icon_path,  # Will be None if no icon found
-            title="🎤",
-            quit_button=None  # We'll add our own quit button
+            icon=None,
+            title="🎤",  # Simple mic emoji
+            quit_button=None
         )
         
-        # Set up logging
-        self.logger = logging.getLogger(__name__)
+        self.logger.info("✅ Using emoji icon: 🎤")
+        
+        # CRITICAL: Hide Dock icon (menu bar only app)
+        # Must be set AFTER rumps.App.__init__() which creates/resets NSApplication
+        try:
+            from AppKit import NSApplication, NSApplicationActivationPolicyAccessory
+            app = NSApplication.sharedApplication()
+            app.setActivationPolicy_(NSApplicationActivationPolicyAccessory)
+            self.logger.info("Dock icon hidden successfully")
+        except Exception as e:
+            self.logger.warning(f"Could not hide Dock icon: {e}")
+        
+        # Use simple emoji icon (SF Symbols don't work well with rumps programmatically)
+        # Emoji is clean, simple, and works perfectly across all macOS versions
         
         # Initialize managers
         self.whisper_manager = MLXWhisperManager()
@@ -58,13 +63,53 @@ class HeyMikeApp(rumps.App):
         self.text_manager = TextInsertionManager()
         self.settings = AppSettings()
         
+        # Initialize visual overlay manager (Phase 1) - thread-safe
+        self.overlay_manager = None
+        self.qt_app = None
+        try:
+            from PyQt6.QtWidgets import QApplication
+            from UI.OverlayManager import OverlayManager
+            
+            # Get or create QApplication instance
+            self.qt_app = QApplication.instance()
+            if self.qt_app is None:
+                self.logger.warning("QApplication not found - creating new instance")
+                self.qt_app = QApplication([])
+            
+            self.qt_app.setQuitOnLastWindowClosed(False)
+            
+            self.overlay_manager = OverlayManager()
+            if self.overlay_manager.is_available():
+                # Pass overlay to audio manager for amplitude updates
+                self.audio_manager.set_overlay(self.overlay_manager)
+                self.logger.info("Visual overlay manager initialized successfully")
+            else:
+                self.logger.info("Visual overlay not available")
+        except ImportError:
+            self.logger.info("PyQt6 not available - visual overlay disabled")
+        except Exception as e:
+            self.logger.warning(f"Failed to initialize visual overlay: {e}")
+        
         # Initialize LLM and text enhancement
         self.llm_manager = MLXLLMManager()
         self.text_enhancer = TextEnhancer(self.llm_manager)
+        # Note: NoteClassifier not used in Phase 1 (Action Mode deferred to Phase 2)
+        # self.note_classifier = NoteClassifier(self.llm_manager)
+        
+        # Initialize transcription history (Hybrid approach: Option 5)
+        self.transcription_history = TranscriptionHistory(max_items=10)
         
         # Initialize VS Code Bridge (v2.0+)
-        self.vscode_bridge = VSCodeBridge(port=8765)
-        self.vscode_bridge.set_settings_callback(self._get_settings_for_vscode)
+        # Initialize VS Code Bridge (Phase 2 feature)
+        # Gracefully degrade if SocketIO fails in bundled app
+        try:
+            self.vscode_bridge = VSCodeBridge(port=8765)
+            self.vscode_bridge.set_settings_callback(self._get_settings_for_vscode)
+            self.logger.info("VSCodeBridge initialized successfully")
+        except Exception as e:
+            self.vscode_bridge = None
+            self.logger.warning(f"VSCodeBridge initialization failed (Phase 2 feature): {e}")
+            self.logger.info("App will continue without VS Code extension support")
         
         # Application state
         self.is_recording = False
@@ -127,6 +172,51 @@ class HeyMikeApp(rumps.App):
             self.logger.warning(f"Could not load settings early: {str(e)}")
             self.current_model = 'tiny'  # Fallback
     
+    
+    def _set_sf_symbol_icon(self):
+        """
+        Set SF Symbol icon after rumps initialization.
+        Uses simple "mic" outline icon.
+        """
+        try:
+            from AppKit import NSImage
+            
+            # Debug: Check what attributes exist
+            self.logger.info(f"Has _app: {hasattr(self, '_app')}")
+            if hasattr(self, '_app'):
+                self.logger.info(f"_app value: {self._app}")
+                self.logger.info(f"_app type: {type(self._app)}")
+            
+            # Use SF Symbol "mic" (clean outline microphone)
+            symbol_name = "mic"
+            image = NSImage.imageWithSystemSymbolName_accessibilityDescription_(
+                symbol_name, 
+                "Hey Mike! - Voice Dictation"
+            )
+            
+            self.logger.info(f"Image created: {image is not None}")
+            
+            if image and hasattr(self, '_app') and self._app:
+                # Set size for menu bar
+                image.setSize_((18, 18))
+                # Set as template for dark mode support
+                image.setTemplate_(True)
+                
+                # Set on status bar button
+                button = self._app.button()
+                self.logger.info(f"Button: {button}")
+                if button:
+                    button.setImage_(image)
+                    self.title = None  # Clear text
+                    self.logger.info(f"✅ Using SF Symbol: {symbol_name}")
+                else:
+                    self.logger.warning("Could not access status bar button")
+            else:
+                self.logger.warning(f"SF Symbols not available - image: {image is not None}, has _app: {hasattr(self, '_app')}")
+                
+        except Exception as e:
+            self.logger.error(f"Error setting SF Symbol: {e}", exc_info=True)
+    
     def _setup_menu(self):
         """Setup the menu bar menu"""
         
@@ -144,6 +234,15 @@ class HeyMikeApp(rumps.App):
         model_display = f"📊 Current: {self.current_model.title()} ({current_model_info.get('size', 'unknown')})"
         self.current_model_item = rumps.MenuItem(model_display, callback=None)
         self.menu.add(self.current_model_item)
+        
+        self.menu.add(rumps.separator)
+        
+        # Recent Transcriptions submenu (Hybrid approach: Option 5)
+        self.history_menu = rumps.MenuItem("📋 Recent Transcriptions")
+        # Add placeholder item (will be updated after first transcription)
+        empty_item = rumps.MenuItem("(No recent transcriptions)", callback=None)
+        self.history_menu.add(empty_item)
+        self.menu.add(self.history_menu)
         
         self.menu.add(rumps.separator)
         
@@ -296,6 +395,11 @@ class HeyMikeApp(rumps.App):
     def _initialize_app(self):
         """Initialize the application"""
         try:
+            # Qt event processing will be handled by @rumps.timer method below
+            if self.qt_app:
+                self.qt_event_count = 0
+                self.logger.info("Qt event processing timer will start with app")
+            
             # Settings already loaded in _load_settings_early()
             self.logger.debug(f"Initializing app with model: {self.current_model}")
             
@@ -314,10 +418,11 @@ class HeyMikeApp(rumps.App):
             # Load initial model asynchronously
             self.whisper_manager.load_model_async(self.current_model)
             
-            # Start VS Code Bridge server (v2.0+)
-            self.logger.info("Starting VS Code Bridge server on port 8765")
-            self.vscode_bridge.start()
-            self.logger.info("VS Code Bridge started - VS Code extension can now connect")
+            # Start VS Code Bridge server (Phase 2 feature)
+            if self.vscode_bridge:
+                self.logger.info("Starting VS Code Bridge server on port 8765")
+                self.vscode_bridge.start()
+                self.logger.info("VS Code Bridge started - VS Code extension can now connect")
             
             # Menu already created with correct model selected - no need to update during init
             self.logger.debug(f"Menu created with current model: {self.current_model}")
@@ -333,6 +438,14 @@ class HeyMikeApp(rumps.App):
             self.logger.info("Automatic pre-download disabled - use menu to download models manually")
             
             self.logger.info("Hey Mike! initialized successfully")
+            
+            # Show welcome notification so user knows app started
+            rumps.notification(
+                title="Hey Mike! Started",
+                subtitle="Look for 🎤 in your menu bar",
+                message="Press Cmd+Shift+Space to start recording",
+                sound=False
+            )
             
         except Exception as e:
             self.logger.error(f"Failed to initialize app: {str(e)}")
@@ -380,6 +493,11 @@ class HeyMikeApp(rumps.App):
             return
         
         self.logger.info("Starting audio recording...")
+        
+        # Show visual overlay (thread-safe via signals)
+        if self.overlay_manager:
+            self.overlay_manager.show_recording()
+        
         success = self.audio_manager.start_recording()
         if success:
             self.is_recording = True
@@ -410,20 +528,52 @@ class HeyMikeApp(rumps.App):
             self.record_item.title = "🔴 Start Recording"
     
     def _cancel_recording(self):
-        """Cancel current recording"""
+        """Cancel current recording or processing"""
+        # Edge case 1: Cancel during recording
         if self.is_recording:
+            self.logger.info("Cancelling recording...")
             self.audio_manager.stop_recording()
             self.is_recording = False
             self.hotkey_manager.set_recording_state(False)
+            
+            # Show cancelled state in overlay (thread-safe)
+            if self.overlay_manager:
+                self.overlay_manager.show_cancelled()
+            
             self._update_status("Cancelled")
             self._update_menu_icon("🎤")
             self.record_item.title = "Start Recording"
+            
+            self.logger.info("Recording cancelled by user (Esc)")
+        
+        # Edge case 2: Cancel during processing/transcription
+        elif self.is_processing:
+            self.logger.info("Cancelling transcription...")
+            self.is_processing = False
+            
+            # Show cancelled state in overlay (thread-safe)
+            if self.overlay_manager:
+                self.overlay_manager.show_cancelled()
+            
+            self._update_status("Cancelled")
+            self._update_menu_icon("🎤")
+            self.record_item.title = "Start Recording"
+            
+            self.logger.info("Transcription cancelled by user (Esc)")
+        
+        # Edge case 3: Multiple Esc presses (already idle)
+        else:
+            self.logger.debug("Cancel requested but not recording/processing - ignoring")
     
     def _process_audio(self, audio_data):
         """Process recorded audio through Whisper based on current mode"""
         self.is_processing = True
         self._update_status("Transcribing...")
         self._update_menu_icon("⏳")
+        
+        # Show processing state in overlay (thread-safe)
+        if self.overlay_manager:
+            self.overlay_manager.show_processing()
         
         # Get language preference
         language = self.settings.get('language', None)
@@ -433,6 +583,11 @@ class HeyMikeApp(rumps.App):
         
         # Process asynchronously
         def process_callback(raw_text):
+            # Check if cancelled during processing
+            if not self.is_processing:
+                self.logger.debug("Transcription completed but was cancelled - discarding result")
+                return
+            
             if raw_text:
                 if current_mode == 'smart':
                     # Smart mode: Auto-enhance English, direct paste for other languages
@@ -459,15 +614,11 @@ class HeyMikeApp(rumps.App):
                         self._insert_text(raw_text, raw_text)
                         
                 elif current_mode == 'action':
-                    # Action mode: future implementation for voice commands
-                    self._show_notification("Action Mode", "Not yet implemented - using smart transcription")
-                    # Fall back to smart mode logic
-                    if self.settings.get('always_raw', False):
-                        self._insert_text(raw_text, raw_text)
-                    elif self.llm_manager.is_model_loaded() and self._is_likely_english(raw_text):
-                        self._enhance_and_insert(raw_text)
-                    else:
-                        self._insert_text(raw_text, raw_text)
+                    # Action Mode: Deferred to Phase 2 (VS Code extension only)
+                    # Phase 1 native app: Smart Mode ONLY
+                    # Just paste raw text for now
+                    self.logger.info("Action Mode deferred to Phase 2 - pasting raw text")
+                    self._insert_text(raw_text, raw_text)
                     
             else:
                 self.is_processing = False
@@ -486,35 +637,60 @@ class HeyMikeApp(rumps.App):
         style = self.settings.get('enhancement_style', 'standard')
         
         def enhance_callback(enhanced_text):
+            # Check if cancelled during enhancement
+            if not self.is_processing:
+                self.logger.debug("Enhancement completed but was cancelled - discarding result")
+                return
+            
             self._insert_text(raw_text, enhanced_text)
         
         # Enhance asynchronously
         self.text_enhancer.enhance_async(raw_text, style, enhance_callback)
     
-    def _insert_text(self, raw_text: str, final_text: str):
+    def _insert_text(self, raw_text: str, final_text: str, note_data: Optional[Dict[str, Any]] = None, action_intent: Optional[Dict[str, Any]] = None):
         """Insert text and update UI (sends to VS Code if connected, otherwise local insertion)"""
         self.is_processing = False
         self._update_menu_icon("🎤")
         self.record_item.title = "🔴 Start Recording"
         
+        # Show complete state in overlay (thread-safe)
+        if self.overlay_manager:
+            self.overlay_manager.show_complete()
+        
         # Send processing state to VS Code
-        self.vscode_bridge.send_processing_state('ready')
+        if self.vscode_bridge:
+            self.vscode_bridge.send_processing_state('ready')
         
         # Get current mode
         current_mode = self.hotkey_manager.get_current_mode()
         
         # Check if VS Code is connected
-        if self.vscode_bridge.is_connected():
+        if self.vscode_bridge and self.vscode_bridge.is_connected():
             # Send transcription to VS Code extension
             self.logger.info("VS Code connected - sending transcription to extension")
-            self.vscode_bridge.send_transcription(
+            
+            # Build context with note data if available
+            context = {
+                'raw_text': raw_text,
+                'was_enhanced': raw_text != final_text,
+                'language': self.settings.get('language', 'auto')
+            }
+            
+            # Add note classification if available
+            if note_data:
+                context['note'] = note_data
+                self.logger.info(f"Including note data: type={note_data.get('type')}, explicit={note_data.get('explicit')}")
+            
+            # Add action intent if available (for future actions like explain, search, etc.)
+            if action_intent:
+                context['action_intent'] = action_intent
+                self.logger.info(f"Including action intent: {action_intent.get('intent')}")
+            
+            if self.vscode_bridge:
+                self.vscode_bridge.send_transcription(
                 text=final_text,
                 mode=current_mode,
-                context={
-                    'raw_text': raw_text,
-                    'was_enhanced': raw_text != final_text,
-                    'language': self.settings.get('language', 'auto')
-                }
+                context=context
             )
             
             # Show notification
@@ -531,27 +707,53 @@ class HeyMikeApp(rumps.App):
                 self.logger.info(f"Enhanced: {final_text}")
         else:
             # Fallback to local text insertion (no VS Code connected)
-            self.logger.info("VS Code not connected - using local text insertion")
-            success = self.text_manager.insert_text(final_text)
+            # Hybrid approach: Always copies to clipboard, tries to auto-insert
+            self.logger.info("VS Code not connected - using local text insertion (hybrid approach)")
+            result = self.text_manager.insert_text(final_text)
             
-            if success:
-                # Show notification with enhancement indicator
-                was_enhanced = raw_text != final_text and self.settings.get('enhance_text', True)
-                notification_prefix = "✨ Enhanced & Inserted" if was_enhanced else "Text Inserted"
+            was_enhanced = raw_text != final_text and self.settings.get('enhance_text', True)
+            
+            # Add to history
+            self.transcription_history.add(
+                text=final_text,
+                raw_text=raw_text,
+                was_enhanced=was_enhanced
+            )
+            self._update_history_menu()  # Update menu with new item
+            
+            # Handle different insertion statuses
+            if result['status'] == 'inserted':
+                # Success: Text inserted AND in clipboard
+                notification_prefix = "✨ Enhanced & Inserted 📋" if was_enhanced else "Text Inserted 📋"
                 
-                self._update_status(f"Inserted: {final_text[:30]}...")
+                self._update_status(f"Inserted: {final_text[:30]}... 📋")
                 self._show_notification(
                     notification_prefix, 
-                    final_text[:100] + ("..." if len(final_text) > 100 else "")
+                    f"{final_text[:80]}... (also in clipboard)"
                 )
                 
                 # Log if enhanced
                 if was_enhanced:
                     self.logger.info(f"Original: {raw_text}")
                     self.logger.info(f"Enhanced: {final_text}")
+                    self.logger.info("Text inserted successfully (also in clipboard)")
+                
+            elif result['status'] == 'clipboard_only':
+                # Failed to insert, but in clipboard
+                notification_prefix = "📋 Copied to Clipboard"
+                
+                self._update_status("In clipboard - press Cmd+V to paste")
+                self._show_notification(
+                    notification_prefix,
+                    "No text field focused. Press Cmd+V to paste manually."
+                )
+                
+                self.logger.warning("Text insertion failed - text in clipboard for manual paste")
+                
             else:
-                self._update_status("Insertion failed")
-                self._show_notification("Error", "Failed to insert text")
+                # Complete failure (rare)
+                self._update_status("Failed to copy text")
+                self._show_notification("Error", "Failed to process text")
     
     def _select_model(self, model_name: str):
         """Select a different Whisper model"""
@@ -898,13 +1100,9 @@ class HeyMikeApp(rumps.App):
     
     def _update_title_for_mode(self, mode: str):
         """Update menu bar title to show current mode"""
-        mode_icons = {
-            'smart': '📝',
-            'action': '⚡'
-        }
-        icon = mode_icons.get(mode, '🎤')
-        self.title = f"{icon}"
-        self.logger.debug(f"Updated title for mode: {mode}")
+        # Don't change the icon/title - keep the custom icon or "M"
+        # The icon is set during initialization and should stay
+        self.logger.debug(f"Mode changed to: {mode} (keeping icon unchanged)")
     
     def _switch_mode(self, mode: str):
         """Switch to a different transcription mode (called from menu)"""
@@ -944,7 +1142,8 @@ class HeyMikeApp(rumps.App):
         self.settings.save_settings()
         
         # Notify VS Code extension
-        self.vscode_bridge.send_mode_change(mode)
+        if self.vscode_bridge:
+            self.vscode_bridge.send_mode_change(mode)
         
         # Show notification
         mode_names = {
@@ -1115,6 +1314,16 @@ class HeyMikeApp(rumps.App):
             self.logger.error(f"Error in text insertion test: {str(e)}")
             self._show_notification("❌ Test Error", f"Test failed: {str(e)}")
     
+    @rumps.timer(0.033)  # ~30 FPS for Qt event processing
+    def process_qt_events(self, _):
+        """Process Qt events periodically to keep overlay responsive"""
+        if hasattr(self, 'qt_app') and self.qt_app:
+            self.qt_app.processEvents()
+            if hasattr(self, 'qt_event_count'):
+                self.qt_event_count += 1
+                if self.qt_event_count == 1:
+                    self.logger.info("✅ Qt events are being processed by rumps timer!")
+    
     def _quit_app(self, sender):
         """Quit the application"""
         self._cleanup()
@@ -1140,8 +1349,72 @@ class HeyMikeApp(rumps.App):
         self.status_item.title = f"{icon} {status}"
     
     def _update_menu_icon(self, icon: str):
-        """Update menu bar icon"""
-        self.title = icon
+        """
+        Update menu bar icon (for state changes).
+        When using SF Symbol, we keep the icon and don't change it.
+        """
+        # With SF Symbol, we don't change the icon - it stays as mic.fill
+        # The overlay provides visual feedback instead
+        # If you want to change icon based on state, we could swap SF Symbols here
+        pass
+    
+    def _update_history_menu(self):
+        """Update the Recent Transcriptions submenu with latest items"""
+        # Clear existing items (check if menu is initialized first)
+        try:
+            self.history_menu.clear()
+        except (AttributeError, TypeError):
+            # Menu not fully initialized yet, skip update
+            return
+        
+        # Check if history is empty
+        if self.transcription_history.is_empty():
+            empty_item = rumps.MenuItem("(No recent transcriptions)", callback=None)
+            self.history_menu.add(empty_item)
+            return
+        
+        # Get menu items from history
+        menu_items = self.transcription_history.get_menu_items(max_display=5)
+        
+        for item in menu_items:
+            # Create callback with proper closure
+            def make_callback(text=item['text']):
+                return lambda _: self._paste_from_history(text)
+            
+            history_item = rumps.MenuItem(item['title'], callback=make_callback())
+            self.history_menu.add(history_item)
+        
+        # Add separator and clear option
+        if len(menu_items) > 0:
+            self.history_menu.add(rumps.separator)
+            clear_item = rumps.MenuItem("🗑️ Clear History", callback=self._clear_history)
+            self.history_menu.add(clear_item)
+    
+    def _paste_from_history(self, text: str):
+        """Paste text from history (copies to clipboard and pastes)"""
+        self.logger.info(f"Pasting from history: {text[:50]}...")
+        
+        # Copy to clipboard
+        from Cocoa import NSPasteboard, NSStringPboardType
+        pasteboard = NSPasteboard.generalPasteboard()
+        pasteboard.clearContents()
+        pasteboard.setString_forType_(text, NSStringPboardType)
+        
+        # Try to paste
+        result = self.text_manager.insert_text(text)
+        
+        if result['status'] == 'inserted':
+            self._show_notification("Pasted from History", f"{len(text)} characters")
+            self._update_status("Pasted from history 📋")
+        else:
+            self._show_notification("Copied to Clipboard", "Press Cmd+V to paste")
+            self._update_status("In clipboard - press Cmd+V")
+    
+    def _clear_history(self, _):
+        """Clear transcription history"""
+        self.transcription_history.clear()
+        self._update_history_menu()
+        self.logger.info("Transcription history cleared")
     
     def _show_notification(self, title: str, message: str):
         """Show system notification"""
@@ -1156,14 +1429,16 @@ class HeyMikeApp(rumps.App):
         """Called when recording starts"""
         self.logger.debug("Recording started")
         # Notify VS Code extension
-        self.vscode_bridge.send_recording_state('recording')
+        if self.vscode_bridge:
+            self.vscode_bridge.send_recording_state('recording')
     
     def _on_recording_stopped(self, audio_data):
         """Called when recording stops"""
         self.logger.debug(f"Recording stopped, {len(audio_data)} samples")
         # Notify VS Code extension
-        self.vscode_bridge.send_recording_state('ready')
-        self.vscode_bridge.send_processing_state('processing', 'Transcribing...')
+        if self.vscode_bridge:
+            self.vscode_bridge.send_recording_state('ready')
+            self.vscode_bridge.send_processing_state('processing', 'Transcribing...')
     
     def _on_audio_level(self, level: float):
         """Called with audio level updates"""
@@ -1233,7 +1508,8 @@ class HeyMikeApp(rumps.App):
             # Stop VS Code Bridge
             if hasattr(self, 'vscode_bridge'):
                 self.logger.info("Stopping VS Code Bridge...")
-                self.vscode_bridge.stop()
+                if self.vscode_bridge:
+                    self.vscode_bridge.stop()
             
             # Stop hotkey listener first
             self.hotkey_manager.cleanup()
@@ -1256,15 +1532,34 @@ class HeyMikeApp(rumps.App):
 
 def main():
     """Main entry point for the menu bar app"""
-    # Set up logging
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    )
+    # NOTE: Logging is already configured by main.py's setup_logging()
+    # This function is called FROM main.py after logging is set up
     
-    # Create and run app
-    app = HeyMikeApp()
-    app.run()
+    logger = logging.getLogger(__name__)
+    logger.info("=" * 60)
+    logger.info("MenuBarController main() starting")
+    logger.info("=" * 60)
+    
+    try:
+        # Create and run app
+        logger.info("Creating HeyMikeApp instance...")
+        app = HeyMikeApp()
+        logger.info("HeyMikeApp created successfully, starting run loop...")
+        app.run()
+        logger.info("App run loop exited normally")
+    except Exception as e:
+        logger.error(f"FATAL ERROR in main(): {e}", exc_info=True)
+        # Show error dialog
+        try:
+            import rumps
+            rumps.alert(
+                title="Hey Mike! Error",
+                message=f"Failed to start: {str(e)}",
+                ok="Quit"
+            )
+        except:
+            pass
+        raise
 
 
 if __name__ == "__main__":
