@@ -225,7 +225,7 @@ launchctl load ~/Library/LaunchAgents/com.unseenium.heymike.plist
 ## 🆘 Getting Help
 
 - **Documentation:** [README.md](README.md)
-- **User Guide:** [docs/USER_GUIDE.md](docs/USER_GUIDE.md)
+- **User Guide:** [user-guide.md](user-guide.md)
 - **Issues:** [GitHub Issues](https://github.com/Unseenium/HeyMike/issues)
 - **Discussions:** [GitHub Discussions](https://github.com/Unseenium/HeyMike/discussions)
 

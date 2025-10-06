@@ -493,8 +493,8 @@ Hey Mike! works with **any text field** on macOS:
 ### Resources
 
 - **User Guide**: You're reading it! 📖
-- **API Docs**: [docs/API.md](./API.md)
-- **Architecture**: [docs/ARCHITECTURE.md](./ARCHITECTURE.md)
+- **API Docs**: [api.md](./api.md)
+- **Architecture**: [architecture.md](./architecture.md)
 - **GitHub**: [github.com/Unseenium/HeyMike](https://github.com/Unseenium/HeyMike)
 
 ### Report Issues
