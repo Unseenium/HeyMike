@@ -285,31 +285,25 @@ class HotkeyManager:
     
     def get_current_mode(self) -> str:
         """
-        Get the current mode
+        Get the current mode (simplified for Phase 1 Mac app)
         
         Returns:
-            Current mode name ('smart' or 'action')
+            Fixed mode 'voice_note' (modes handled by VS Code extension in Phase 2)
         """
-        return self.current_mode
+        return 'voice_note'
     
     def set_mode(self, mode: str) -> bool:
         """
-        Manually set the current mode
+        Set mode (no-op for Phase 1 Mac app - kept for VS Code extension compatibility)
         
         Args:
-            mode: Mode name to set
+            mode: Mode name (ignored)
             
         Returns:
-            True if mode is valid and set, False otherwise
+            True (always succeeds)
         """
-        if mode in self.mode_hotkeys:
-            old_mode = self.current_mode
-            self.current_mode = mode
-            self.logger.info(f"Mode manually set: {old_mode} → {mode}")
-            return True
-        else:
-            self.logger.error(f"Invalid mode: {mode}")
-            return False
+        self.logger.debug(f"set_mode called with {mode} (no-op in Phase 1 Mac app)")
+        return True
     
     def get_mode_hotkey_string(self, mode: str) -> Optional[str]:
         """

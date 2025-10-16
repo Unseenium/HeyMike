@@ -28,7 +28,7 @@ a = Analysis(
         'Core.HotkeyManager',
         'Core.TextInsertionManager',
         'Core.VSCodeBridge',
-        'Core.NoteClassifier',
+        # Note: NoteClassifier excluded - Phase 2 feature, not needed in Phase 1 Mac app
         
         # UI modules
         'UI.MenuBarController',

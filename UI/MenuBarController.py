@@ -22,7 +22,7 @@ from MLXLLMManager import MLXLLMManager
 from TextEnhancer import TextEnhancer
 from VSCodeBridge import VSCodeBridge
 from AppSettings import AppSettings
-from NoteClassifier import NoteClassifier
+# Note: NoteClassifier excluded - Phase 2 feature only
 from TranscriptionHistory import TranscriptionHistory
 
 class HeyMikeApp(rumps.App):
@@ -140,7 +140,6 @@ class HeyMikeApp(rumps.App):
         # Hotkey callbacks
         self.hotkey_manager.on_record_toggle = self._toggle_recording
         self.hotkey_manager.on_cancel_recording = self._cancel_recording
-        self.hotkey_manager.on_mode_change = self._handle_mode_change
         
         # Audio callbacks
         self.audio_manager.on_recording_start = self._on_recording_started
@@ -231,11 +230,11 @@ class HeyMikeApp(rumps.App):
             
             # Get devices - this should work even if empty
             devices = self.audio_manager.get_input_devices()
-            self.logger.info(f"Found {len(devices)} audio input devices")
+            self.logger.debug(f"Found {len(devices)} audio input devices")
             
             # Log each device for debugging
             for d in devices:
-                self.logger.info(f"  Device {d['index']}: {d['name']} ({d['channels']} channels, {d['sample_rate']} Hz)")
+                self.logger.debug(f"  Device {d['index']}: {d['name']} ({d['channels']} channels, {d['sample_rate']} Hz)")
             
             current_device = self.settings.get('audio_device', 'Default')
             
@@ -272,17 +271,17 @@ class HeyMikeApp(rumps.App):
                     self.audio_menu.add(device_item)
                     self.audio_items_map[d['index']] = device_item
                 
-                self.logger.info(f"✅ Audio device menu populated with {len(devices)} devices")
+                self.logger.debug(f"✅ Audio device menu populated with {len(devices)} devices")
             else:
                 self.audio_menu.add(rumps.separator)
                 no_devices_item = rumps.MenuItem("⚠️ No microphones found", callback=None)
                 self.audio_menu.add(no_devices_item)
                 self.logger.warning("No audio input devices found")
             
-            # Add refresh button at the bottom
+            # Add auto-refresh status info at the bottom
             self.audio_menu.add(rumps.separator)
-            refresh_item = rumps.MenuItem("🔄 Refresh Devices", callback=self._refresh_audio_devices_callback)
-            self.audio_menu.add(refresh_item)
+            info_item = rumps.MenuItem("ℹ️ Updates automatically", callback=None)
+            self.audio_menu.add(info_item)
                     
         except Exception as e:
             self.logger.error(f"Error refreshing audio device menu: {e}", exc_info=True)
@@ -292,11 +291,26 @@ class HeyMikeApp(rumps.App):
             error_item = rumps.MenuItem(f"⚠️ Error: {str(e)[:50]}", callback=None)
             self.audio_menu.add(error_item)
     
-    def _refresh_audio_devices_callback(self, sender):
-        """Callback for refresh button"""
-        self.logger.info("Refreshing audio devices...")
-        self._refresh_audio_device_menu()
-        self._show_notification("🔄 Devices Refreshed", "Audio device list updated")
+    @rumps.timer(10)  # Auto-refresh every 10 seconds
+    def _auto_refresh_audio_devices(self, _):
+        """Automatically refresh audio device list to detect hot-plugged devices"""
+        try:
+            # Only refresh if the menu has been initialized
+            if hasattr(self, 'audio_menu') and hasattr(self, 'audio_items_map'):
+                old_device_count = len(self.audio_items_map) - 1  # -1 for the 'default' item
+                
+                # Reinitialize PyAudio to detect hot-plugged devices (Bluetooth, USB, etc.)
+                self.audio_manager.refresh_device_list()
+                
+                # Rebuild the menu with updated device list
+                self._refresh_audio_device_menu()
+                new_device_count = len(self.audio_items_map) - 1
+                
+                # Log if devices changed
+                if new_device_count != old_device_count:
+                    self.logger.info(f"🔄 Audio devices changed: {old_device_count} → {new_device_count}")
+        except Exception as e:
+            self.logger.debug(f"Auto-refresh audio devices error: {e}")
     
     def _setup_language_menu(self):
         """Setup language submenu with clickable language options"""
@@ -351,9 +365,9 @@ class HeyMikeApp(rumps.App):
         self.record_item = rumps.MenuItem("🔴 Start Recording", callback=self._menu_toggle_recording)
         self.menu.add(self.record_item)
         
-        # Current model display
+        # Current model display (not clickable, just informational)
         current_model_info = self.whisper_manager.get_available_models().get(self.current_model, {})
-        model_display = f"📊 Current: {self.current_model.title()} ({current_model_info.get('size', 'unknown')})"
+        model_display = f"🌟 Current: {self.current_model.title()} - {current_model_info.get('size', 'unknown')}"
         self.current_model_item = rumps.MenuItem(model_display, callback=None)
         self.menu.add(self.current_model_item)
         
@@ -375,12 +389,12 @@ class HeyMikeApp(rumps.App):
         self.model_items_map = {}  # Store references for updates
         
         for model_name, info in self.whisper_manager.get_available_models().items():
+            # Use same icons as LLM Models for consistency
             icon = "✅" if model_name == self.current_model else "⚪"
             
             # Create callback function with proper closure
             def make_model_callback(model):
                 def callback(sender):
-                    self.logger.info(f"Model menu item clicked: {model}")
                     self._select_model(model)
                 return callback
             
@@ -392,8 +406,6 @@ class HeyMikeApp(rumps.App):
             # Add to menu first, then store reference
             self.model_menu.add(model_item)
             self.model_items_map[model_name] = model_item
-            
-            self.logger.debug(f"Created menu item for {model_name}: {model_item}")
         
         self.model_menu.add(rumps.separator)
         self.predownload_item = rumps.MenuItem("⬇️ Download All Models", callback=self._start_predownload)
@@ -419,7 +431,6 @@ class HeyMikeApp(rumps.App):
             # Create callback function with proper closure
             def make_llm_callback(model):
                 def callback(sender):
-                    self.logger.info(f"LLM model menu item clicked: {model}")
                     self._select_llm_model(model)
                 return callback
             
@@ -436,38 +447,14 @@ class HeyMikeApp(rumps.App):
         self.menu.add(self.llm_menu)
         self.menu.add(rumps.separator)
         
-        # Mode selection section
-        self.mode_menu = rumps.MenuItem("🎯 Transcription Mode")
-        self.mode_items_map = {}  # Store references for updates
-        
-        mode_descriptions = {
-            'smart': ('📝 Smart', 'Auto-enhances English, direct paste others', 'Cmd+Opt+1'),
-            'action': ('⚡ Action', 'Voice commands (coming soon)', 'Cmd+Opt+2')
-        }
-        
-        for mode_name, (icon, desc, hotkey) in mode_descriptions.items():
-            is_current = mode_name == self.hotkey_manager.get_current_mode()
-            check = "✓ " if is_current else "   "
-            
-            # Create callback with proper closure
-            def make_mode_callback(mode):
-                def callback(sender):
-                    self._switch_mode(mode)
-                return callback
-            
-            mode_item = rumps.MenuItem(
-                f"{check}{icon} - {desc} ({hotkey})",
-                callback=make_mode_callback(mode_name)
-            )
-            
-            # Disable action mode for now
-            if mode_name == 'action':
-                mode_item.set_callback(None)
-            
-            self.mode_menu.add(mode_item)
-            self.mode_items_map[mode_name] = mode_item
-        
-        self.menu.add(self.mode_menu)
+        # Text Enhancement toggle (simplified to just ON/OFF)
+        enhance_enabled = self.settings.get('enhance_text', True)
+        status_icon = "✅" if enhance_enabled else "❌"
+        self.enhancement_toggle = rumps.MenuItem(
+            f"✨ Text Enhancement: {status_icon} {'ON' if enhance_enabled else 'OFF'}",
+            callback=self._toggle_enhancement
+        )
+        self.menu.add(self.enhancement_toggle)
         self.menu.add(rumps.separator)
         
         # Settings section with icons
@@ -491,55 +478,6 @@ class HeyMikeApp(rumps.App):
         self.language_items_map = {}
         self._setup_language_menu()
         self.settings_menu.add(self.language_menu)
-        
-        self.settings_menu.add(rumps.separator)
-        
-        # Text Enhancement submenu with clickable options (better UX than typing)
-        self.enhancement_menu = rumps.MenuItem("✨ Text Enhancement")
-        self.enhancement_items_map = {}  # Store references for updates
-        
-        # Get current settings
-        enhance_enabled = self.settings.get('enhance_text', True)
-        current_style = self.settings.get('enhancement_style', 'standard')
-        
-        # Enable/Disable toggle
-        status_icon = "✅" if enhance_enabled else "❌"
-        enable_toggle = rumps.MenuItem(
-            f"{status_icon} Enhancement: {'ON' if enhance_enabled else 'OFF'}",
-            callback=self._toggle_enhancement
-        )
-        self.enhancement_menu.add(enable_toggle)
-        self.enhancement_items_map['toggle'] = enable_toggle
-        
-        self.enhancement_menu.add(rumps.separator)
-        
-        # Style options
-        enhancement_styles = {
-            'standard': ('📝 Standard', 'Clean and clear'),
-            'professional': ('👔 Professional', 'Formal tone'),
-            'casual': ('😊 Casual', 'Friendly tone'),
-            'technical': ('🔧 Technical', 'Technical writing')
-        }
-        
-        for style_name, (icon, desc) in enhancement_styles.items():
-            is_current = style_name == current_style and enhance_enabled
-            check = "✓ " if is_current else "   "
-            
-            # Create callback with proper closure
-            def make_style_callback(style):
-                def callback(sender):
-                    self._select_enhancement_style(style)
-                return callback
-            
-            style_item = rumps.MenuItem(
-                f"{check}{icon} - {desc}",
-                callback=make_style_callback(style_name)
-            )
-            
-            self.enhancement_menu.add(style_item)
-            self.enhancement_items_map[style_name] = style_item
-        
-        self.settings_menu.add(self.enhancement_menu)
         
         self.settings_menu.add(rumps.separator)
         permissions_item = rumps.MenuItem("🔐 Check Permissions", callback=self._check_permissions_detailed)
@@ -584,12 +522,7 @@ class HeyMikeApp(rumps.App):
             
             # Start hotkey listener
             self.hotkey_manager.start_listening()
-            
-            # Set initial transcription mode from settings
-            initial_mode = self.settings.get('transcription_mode', 'smart')
-            self.hotkey_manager.set_mode(initial_mode)
-            self._update_title_for_mode(initial_mode)
-            self.logger.info(f"Initialized with transcription mode: {initial_mode}")
+            self.logger.info("Hotkey listener started")
             
             # Load initial model asynchronously
             self.whisper_manager.load_model_async(self.current_model)
@@ -606,7 +539,7 @@ class HeyMikeApp(rumps.App):
             # Update current model display
             if hasattr(self, 'current_model_item'):
                 current_model_info = self.whisper_manager.get_available_models().get(self.current_model, {})
-                model_display = f"📊 Current: {self.current_model.title()} ({current_model_info.get('size', 'unknown')})"
+                model_display = f"🌟 Current: {self.current_model.title()} - {current_model_info.get('size', 'unknown')}"
                 self.current_model_item.title = model_display
             
             # Disable automatic pre-download for now to prevent crashes
@@ -628,21 +561,75 @@ class HeyMikeApp(rumps.App):
             self._show_error_dialog(f"Initialization failed: {str(e)}")
     
     def _check_permissions(self):
-        """Check and warn about missing permissions"""
-        # Check accessibility permissions
-        if not self.text_manager._check_accessibility_permissions():
-            self._show_notification(
-                "Permissions Required", 
-                "Please grant Accessibility permissions in System Preferences → Security & Privacy → Privacy → Accessibility"
-            )
-        
-        # Check if we can detect audio devices
-        devices = self.audio_manager.get_input_devices()
-        if not devices:
-            self._show_notification(
-                "Audio Issue", 
-                "No audio input devices found. Please check microphone permissions."
-            )
+        """Check and warn about missing permissions (only once per session)"""
+        try:
+            import sys
+            
+            # Check if user has dismissed this alert in settings
+            dismissed = self.settings.get('permission_alert_dismissed', False)
+            if dismissed:
+                self.logger.debug("Permission alert dismissed by user, skipping check")
+                return
+            
+            # Check accessibility permissions (critical for hotkeys)
+            has_accessibility = False
+            try:
+                has_accessibility = self.text_manager._check_accessibility_permissions()
+            except Exception as e:
+                self.logger.error(f"Could not check accessibility permissions: {e}")
+            
+            # For bundled apps, show a prominent alert on first launch
+            is_bundled = getattr(sys, 'frozen', False)
+            
+            if not has_accessibility:
+                if is_bundled:
+                    # Show alert dialog for bundled apps (more visible than notification)
+                    self.logger.warning("⚠️ Accessibility permission not granted - hotkeys will not work!")
+                    response = rumps.alert(
+                        title="⚠️ Permissions Required",
+                        message=(
+                            "Hotkeys won't work without Accessibility permission!\n\n"
+                            "To enable:\n"
+                            "1. System Settings → Privacy & Security → Accessibility\n"
+                            "2. Click 🔒 to unlock\n"
+                            "3. Add \"Hey Mike!\" and enable it\n"
+                            "4. Restart the app\n\n"
+                            "Click 'Open Settings' to go there now.\n"
+                            "Or click 'Don't Show Again' to dismiss permanently."
+                        ),
+                        ok="Open Settings",
+                        cancel="Don't Show Again"
+                    )
+                    if response == 1:  # OK clicked - Open Settings
+                        try:
+                            import subprocess
+                            subprocess.run(["open", "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"])
+                        except Exception as e:
+                            self.logger.error(f"Could not open System Settings: {e}")
+                    elif response == 0:  # Cancel clicked - Don't show again
+                        self.settings.set('permission_alert_dismissed', True)
+                        self.settings.save_settings()
+                        self.logger.info("User dismissed permission alert permanently")
+                else:
+                    # For development/terminal runs, just show notification (once)
+                    self._show_notification(
+                        "Permissions Required", 
+                        "Please grant Accessibility permissions in System Settings"
+                    )
+            
+            # Check if we can detect audio devices
+            try:
+                devices = self.audio_manager.get_input_devices()
+                if not devices:
+                    self._show_notification(
+                        "Audio Issue", 
+                        "No audio input devices found. Please check microphone permissions."
+                    )
+            except Exception as e:
+                self.logger.error(f"Could not check audio devices: {e}")
+                
+        except Exception as e:
+            self.logger.error(f"Permission check failed: {e}", exc_info=True)
     
     def _toggle_recording(self):
         """Toggle recording state"""
@@ -754,9 +741,6 @@ class HeyMikeApp(rumps.App):
         # Get language preference
         language = self.settings.get('language', None)
         
-        # Get current transcription mode
-        current_mode = self.hotkey_manager.get_current_mode()
-        
         # Process asynchronously
         def process_callback(raw_text):
             # Check if cancelled during processing
@@ -765,35 +749,23 @@ class HeyMikeApp(rumps.App):
                 return
             
             if raw_text:
-                if current_mode == 'smart':
-                    # Smart mode: Auto-enhance English, direct paste for other languages
-                    # Check if user wants to always use raw transcription
-                    if self.settings.get('always_raw', False):
-                        self.logger.info("Always raw mode enabled, skipping enhancement")
-                        self._insert_text(raw_text, raw_text)
-                        return
-                    
-                    # Check if LLM is loaded and language is English
-                    if self.llm_manager.is_model_loaded():
-                        # Auto-detect language
-                        is_english = self._is_likely_english(raw_text)
-                        if is_english:
-                            # Enhance English text
-                            self.logger.info(f"English detected, enhancing: {raw_text[:50]}...")
-                            self._enhance_and_insert(raw_text)
-                        else:
-                            # Non-English: direct paste
-                            self.logger.info(f"Non-English detected, direct paste: {raw_text[:50]}...")
-                            self._insert_text(raw_text, raw_text)
+                # Check if text enhancement is enabled
+                enhance_enabled = self.settings.get('enhance_text', True)
+                
+                if enhance_enabled and self.llm_manager.is_model_loaded():
+                    # Auto-detect language - only enhance English
+                    is_english = self._is_likely_english(raw_text)
+                    if is_english:
+                        # Enhance English text
+                        self.logger.info(f"English detected, enhancing: {raw_text[:50]}...")
+                        self._enhance_and_insert(raw_text)
                     else:
-                        self.logger.warning("LLM not loaded, using raw transcription")
+                        # Non-English: direct paste
+                        self.logger.info(f"Non-English detected, direct paste: {raw_text[:50]}...")
                         self._insert_text(raw_text, raw_text)
-                        
-                elif current_mode == 'action':
-                    # Action Mode: Deferred to Phase 2 (VS Code extension only)
-                    # Phase 1 native app: Smart Mode ONLY
-                    # Just paste raw text for now
-                    self.logger.info("Action Mode deferred to Phase 2 - pasting raw text")
+                else:
+                    # Enhancement disabled or LLM not loaded: direct paste
+                    self.logger.info(f"Enhancement disabled or LLM not ready, direct paste: {raw_text[:50]}...")
                     self._insert_text(raw_text, raw_text)
                     
             else:
@@ -809,9 +781,6 @@ class HeyMikeApp(rumps.App):
         """Enhance text with LLM and insert"""
         self._update_status("Enhancing...")
         
-        # Get enhancement style
-        style = self.settings.get('enhancement_style', 'standard')
-        
         def enhance_callback(enhanced_text):
             # Check if cancelled during enhancement
             if not self.is_processing:
@@ -821,7 +790,7 @@ class HeyMikeApp(rumps.App):
             self._insert_text(raw_text, enhanced_text)
         
         # Enhance asynchronously
-        self.text_enhancer.enhance_async(raw_text, style, enhance_callback)
+        self.text_enhancer.enhance_async(raw_text, enhance_callback)
     
     def _insert_text(self, raw_text: str, final_text: str, note_data: Optional[Dict[str, Any]] = None, action_intent: Optional[Dict[str, Any]] = None):
         """Insert text and update UI (sends to VS Code if connected, otherwise local insertion)"""
@@ -836,9 +805,6 @@ class HeyMikeApp(rumps.App):
         # Send processing state to VS Code
         if self.vscode_bridge:
             self.vscode_bridge.send_processing_state('ready')
-        
-        # Get current mode
-        current_mode = self.hotkey_manager.get_current_mode()
         
         # Check if VS Code is connected
         if self.vscode_bridge and self.vscode_bridge.is_connected():
@@ -865,7 +831,7 @@ class HeyMikeApp(rumps.App):
             if self.vscode_bridge:
                 self.vscode_bridge.send_transcription(
                 text=final_text,
-                mode=current_mode,
+                mode='voice_note',  # Simple mode for Mac app (modes handled by VS Code extension)
                 context=context
             )
             
@@ -933,13 +899,11 @@ class HeyMikeApp(rumps.App):
     
     def _select_model(self, model_name: str):
         """Select a different Whisper model"""
-        self.logger.info(f"_select_model called with: {model_name}, current: {self.current_model}")
-        
         if model_name == self.current_model:
-            self.logger.info(f"Model {model_name} is already selected, skipping")
+            self.logger.debug(f"Model {model_name} is already selected, skipping")
             return
         
-        self.logger.info(f"Switching model from {self.current_model} to {model_name}")
+        self.logger.info(f"Switching Whisper model: {self.current_model} → {model_name}")
         
         # Update current model
         old_model = self.current_model
@@ -950,12 +914,11 @@ class HeyMikeApp(rumps.App):
         # Update menu visuals
         self._update_model_menu_display()
         
-        # Update current model display
+        # Update current model display with star icon
         current_model_info = self.whisper_manager.get_available_models().get(model_name, {})
-        model_display = f"📊 Current: {model_name.title()} ({current_model_info.get('size', 'unknown')})"
+        model_display = f"🌟 Current: {model_name.title()} - {current_model_info.get('size', 'unknown')}"
         if hasattr(self, 'current_model_item'):
             self.current_model_item.title = model_display
-            self.logger.info(f"Updated current model display to: {model_display}")
         
         # Load new model
         self.whisper_manager.load_model_async(model_name)
@@ -1026,32 +989,43 @@ class HeyMikeApp(rumps.App):
             self.logger.debug(f"Updating model menu display, current model: {self.current_model}")
             
             # Check if model items map exists and is populated
-            if not hasattr(self, 'model_items_map') or not self.model_items_map:
-                self.logger.debug("Model items map not ready - skipping update")
+            if not hasattr(self, 'model_items_map'):
+                self.logger.warning("model_items_map attribute doesn't exist")
+                return
+            
+            if not self.model_items_map:
+                self.logger.warning("model_items_map is empty")
                 return
             
             # Update each model item's title to reflect current selection
             updated_count = 0
             for model_name, menu_item in self.model_items_map.items():
                 try:
-                    if menu_item and hasattr(menu_item, 'title') and isinstance(menu_item.title, str):
-                        icon = "✅" if model_name == self.current_model else "⚪"
-                        model_info = self.whisper_manager.get_available_models().get(model_name, {})
-                        new_title = f"{icon} {model_name.title()} - {model_info.get('size', 'unknown')} ({model_info.get('accuracy', 'unknown')})"
-                        menu_item.title = new_title
-                        updated_count += 1
-                        self.logger.debug(f"Updated {model_name} menu item")
-                    else:
-                        self.logger.debug(f"Skipping {model_name} - menu item not ready")
+                    # NOTE: rumps.MenuItem evaluates to False in boolean context!
+                    # Must use 'is None' instead of 'if not menu_item'
+                    if menu_item is None:
+                        self.logger.warning(f"Menu item for {model_name} is None")
+                        continue
+                    
+                    if not hasattr(menu_item, 'title'):
+                        self.logger.warning(f"Menu item for {model_name} has no title attribute")
+                        continue
+                    
+                    # rumps MenuItem.title is a property, just set it directly
+                    icon = "✅" if model_name == self.current_model else "⚪"
+                    model_info = self.whisper_manager.get_available_models().get(model_name, {})
+                    new_title = f"{icon} {model_name.title()} - {model_info.get('size', 'unknown')} ({model_info.get('accuracy', 'unknown')})"
+                    menu_item.title = new_title
+                    updated_count += 1
+                    
                 except Exception as item_error:
-                    self.logger.debug(f"Could not update {model_name}: {item_error}")
+                    self.logger.error(f"Could not update menu item for {model_name}: {item_error}")
                     continue
                 
             self.logger.debug(f"Updated {updated_count}/{len(self.model_items_map)} model menu items")
             
         except Exception as e:
-            self.logger.debug(f"Model menu update skipped: {e}")
-            # Don't log as error during initialization - this is expected
+            self.logger.error(f"Model menu update failed: {e}", exc_info=True)
     
     def _start_predownload(self, sender):
         """Start pre-downloading all models"""
@@ -1066,27 +1040,91 @@ class HeyMikeApp(rumps.App):
     def _check_permissions_detailed(self, sender):
         """Show detailed permission status"""
         try:
-            # Check microphone permission
-            mic_status = "✅ Granted" if self.audio_manager.check_microphone_permission() else "❌ Not Granted"
+            import sys
+            import subprocess
             
-            # Check accessibility permission
-            acc_status = "✅ Granted" if self.text_manager._check_accessibility_permissions() else "❌ Not Granted"
+            # Check microphone permission (by checking if we can enumerate devices)
+            try:
+                devices = self.audio_manager.get_input_devices()
+                mic_status = "✅ Granted" if len(devices) > 0 else "⚠️ No devices found"
+            except Exception as e:
+                mic_status = f"❌ Error: {str(e)[:30]}"
+            
+            # Check accessibility permission (needed for hotkeys)
+            try:
+                acc_status = "✅ Granted" if self.text_manager._check_accessibility_permissions() else "❌ Not Granted"
+            except Exception as e:
+                acc_status = f"❌ Error: {str(e)[:30]}"
+            
+            # Detect if running as bundled app
+            is_bundled = getattr(sys, 'frozen', False)
+            app_name = "Hey Mike!" if is_bundled else "Terminal (or your IDE)"
+            
+            # Build message
+            status_icons = "✅✅" if (mic_status.startswith("✅") and acc_status.startswith("✅")) else "❌"
             
             message = (
-                "🔐 Permission Status:\n\n"
-                f"🎙️ Microphone: {mic_status}\n"
-                f"♿ Accessibility: {acc_status}\n\n"
-                "Both permissions are required for Hey Mike! to work properly.\n\n"
-                "To grant permissions:\n"
-                "1. Open System Preferences → Security & Privacy\n"
-                "2. Click Privacy tab\n"
-                "3. Add Terminal to both Microphone and Accessibility"
+                f"{status_icons} Permission Status:\n\n"
+                f"🎙️  Microphone: {mic_status}\n"
+                f"⌨️  Accessibility: {acc_status}\n"
+                f"   (Required for hotkeys)\n\n"
             )
             
-            rumps.alert(
-                title="Permission Status",
-                message=message
+            if not acc_status.startswith("✅"):
+                message += (
+                    "⚠️ HOTKEYS WON'T WORK without Accessibility!\n\n"
+                    "To fix:\n"
+                    f"1. System Settings → Privacy & Security → Accessibility\n"
+                    f"2. Click 🔒 to unlock\n"
+                    f"3. Add \"{app_name}\" and enable it\n"
+                    f"4. Restart the app\n\n"
+                    "Click OK to open System Settings →"
+                )
+            elif not mic_status.startswith("✅"):
+                message += (
+                    "⚠️ RECORDING WON'T WORK without Microphone!\n\n"
+                    "To fix:\n"
+                    f"1. System Settings → Privacy & Security → Microphone\n"
+                    f"2. Add \"{app_name}\" and enable it\n"
+                    f"3. Restart the app\n\n"
+                    "Click OK to open System Settings →"
+                )
+            else:
+                message += "✅ All permissions granted! You're good to go!"
+            
+            response = rumps.alert(
+                title="🔐 Permission Check",
+                message=message,
+                ok="Open Settings" if not (acc_status.startswith("✅") and mic_status.startswith("✅")) else "OK",
+                cancel="Close" if not (acc_status.startswith("✅") and mic_status.startswith("✅")) else None
             )
+            
+            # Open System Settings if user clicked OK and permissions are missing
+            if response == 1 and not (acc_status.startswith("✅") and mic_status.startswith("✅")):
+                try:
+                    if not acc_status.startswith("✅"):
+                        subprocess.run(["open", "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"])
+                    elif not mic_status.startswith("✅"):
+                        subprocess.run(["open", "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone"])
+                except Exception as e:
+                    self.logger.error(f"Could not open System Settings: {e}")
+            
+            # If permissions are granted, offer to reset the alert flag
+            if acc_status.startswith("✅") and mic_status.startswith("✅"):
+                dismissed = self.settings.get('permission_alert_dismissed', False)
+                if dismissed:
+                    reset = rumps.alert(
+                        title="Re-enable Permission Alert?",
+                        message="All permissions granted! Would you like to re-enable the startup permission alert?",
+                        ok="Yes, Re-enable",
+                        cancel="No, Keep Disabled"
+                    )
+                    if reset == 1:
+                        self.settings.set('permission_alert_dismissed', False)
+                        self.settings.save_settings()
+                        self.logger.info("Permission alert re-enabled")
+                        rumps.alert(title="✅ Done", message="Permission alert will show again on next launch")
+                    
         except Exception as e:
             self.logger.error(f"Error checking permissions: {str(e)}")
             rumps.alert(title="Error", message="Could not check permission status")
@@ -1331,75 +1369,6 @@ class HeyMikeApp(rumps.App):
         ratio = english_word_count / len(words)
         return ratio > 0.2
     
-    def _update_title_for_mode(self, mode: str):
-        """Update menu bar title to show current mode"""
-        # Don't change the icon/title - keep the custom icon or "M"
-        # The icon is set during initialization and should stay
-        self.logger.debug(f"Mode changed to: {mode} (keeping icon unchanged)")
-    
-    def _switch_mode(self, mode: str):
-        """Switch to a different transcription mode (called from menu)"""
-        self.logger.info(f"Mode switch requested via menu: {mode}")
-        
-        if self.hotkey_manager.set_mode(mode):
-            # Update UI
-            self._update_mode_menu(mode)
-            self._update_title_for_mode(mode)
-            
-            # Save to settings
-            self.settings.set('transcription_mode', mode)
-            self.settings.save_settings()
-            
-            # Show notification
-            mode_names = {
-                'smart': 'Smart Transcription (Auto-enhance)',
-                'action': 'Action/Command Mode'
-            }
-            self._show_notification(
-                "Mode Switched",
-                f"Now using: {mode_names.get(mode, mode)}"
-            )
-    
-    def _handle_mode_change(self, mode: str):
-        """Handle mode change from hotkey"""
-        self.logger.info(f"Mode changed via hotkey: {mode}")
-        
-        # Update menu items
-        self._update_mode_menu(mode)
-        
-        # Update title
-        self._update_title_for_mode(mode)
-        
-        # Save to settings
-        self.settings.set('transcription_mode', mode)
-        self.settings.save_settings()
-        
-        # Notify VS Code extension
-        if self.vscode_bridge:
-            self.vscode_bridge.send_mode_change(mode)
-        
-        # Show notification
-        mode_names = {
-            'smart': 'Smart Transcription (Auto-enhance)',
-            'action': 'Action/Command Mode'
-        }
-        self._show_notification(
-            "Mode Switched",
-            f"Now using: {mode_names.get(mode, mode)}"
-        )
-    
-    def _update_mode_menu(self, current_mode: str):
-        """Update checkmarks in mode menu"""
-        mode_descriptions = {
-            'smart': ('📝 Smart', 'Auto-enhances English, direct paste others', 'Cmd+Opt+1'),
-            'action': ('⚡ Action', 'Voice commands (coming soon)', 'Cmd+Opt+2')
-        }
-        
-        for mode_name, mode_item in self.mode_items_map.items():
-            icon, desc, hotkey = mode_descriptions[mode_name]
-            check = "✓ " if mode_name == current_mode else "   "
-            mode_item.title = f"{check}{icon} - {desc} ({hotkey})"
-    
     def _toggle_enhancement(self, sender):
         """Toggle text enhancement on/off"""
         self.logger.info("Enhancement toggle clicked")
@@ -1415,88 +1384,20 @@ class HeyMikeApp(rumps.App):
             self.text_enhancer.set_enabled(new_state)
             
             # Update menu display
-            self._update_enhancement_menu_display()
+            status_icon = "✅" if new_state else "❌"
+            self.enhancement_toggle.title = f"✨ Text Enhancement: {status_icon} {'ON' if new_state else 'OFF'}"
             
             # Show notification
             if new_state:
-                current_style = self.settings.get('enhancement_style', 'standard')
-                self._show_notification("✨ Enhancement Enabled", f"Using {current_style} style")
-                self.logger.info(f"Enhancement enabled with style: {current_style}")
+                self._show_notification("✨ Enhancement Enabled", "Grammar, punctuation, and filler words will be fixed")
+                self.logger.info("Enhancement enabled")
             else:
-                self._show_notification("Enhancement Disabled", "Text will not be enhanced")
+                self._show_notification("Enhancement Disabled", "Raw transcription will be used")
                 self.logger.info("Enhancement disabled")
                 
         except Exception as e:
             self.logger.error(f"Error toggling enhancement: {str(e)}")
             self._show_notification("❌ Error", f"Enhancement toggle error: {str(e)}")
-    
-    def _select_enhancement_style(self, style: str):
-        """Select a specific enhancement style"""
-        self.logger.info(f"Enhancement style selected: {style}")
-        try:
-            # Enable enhancement if it was disabled
-            was_disabled = not self.settings.get('enhance_text', True)
-            
-            # Update settings
-            self.settings.set('enhance_text', True)
-            self.settings.set('enhancement_style', style)
-            self.settings.save_settings()
-            
-            # Update text enhancer
-            self.text_enhancer.set_enabled(True)
-            self.text_enhancer.set_style(style)
-            
-            # Update menu display
-            self._update_enhancement_menu_display()
-            
-            # Show notification
-            style_names = {
-                'standard': 'Standard (Clean and clear)',
-                'professional': 'Professional (Formal tone)',
-                'casual': 'Casual (Friendly tone)',
-                'technical': 'Technical (Technical writing)'
-            }
-            
-            notification_msg = style_names.get(style, style)
-            if was_disabled:
-                notification_msg = f"Enhancement enabled with {notification_msg}"
-            
-            self._show_notification("✨ Style Updated", notification_msg)
-            self.logger.info(f"Enhancement style set to: {style}")
-            
-        except Exception as e:
-            self.logger.error(f"Error selecting enhancement style: {str(e)}")
-            self._show_notification("❌ Error", f"Style selection error: {str(e)}")
-    
-    def _update_enhancement_menu_display(self):
-        """Update enhancement menu to show current selection"""
-        try:
-            enhance_enabled = self.settings.get('enhance_text', True)
-            current_style = self.settings.get('enhancement_style', 'standard')
-            
-            # Update toggle item
-            if 'toggle' in self.enhancement_items_map:
-                status_icon = "✅" if enhance_enabled else "❌"
-                self.enhancement_items_map['toggle'].title = f"{status_icon} Enhancement: {'ON' if enhance_enabled else 'OFF'}"
-            
-            # Update style checkmarks
-            enhancement_styles = {
-                'standard': ('📝 Standard', 'Clean and clear'),
-                'professional': ('👔 Professional', 'Formal tone'),
-                'casual': ('😊 Casual', 'Friendly tone'),
-                'technical': ('🔧 Technical', 'Technical writing')
-            }
-            
-            for style_name, (icon, desc) in enhancement_styles.items():
-                if style_name in self.enhancement_items_map:
-                    is_current = style_name == current_style and enhance_enabled
-                    check = "✓ " if is_current else "   "
-                    self.enhancement_items_map[style_name].title = f"{check}{icon} - {desc}"
-            
-            self.logger.debug(f"Enhancement menu updated: enabled={enhance_enabled}, style={current_style}")
-            
-        except Exception as e:
-            self.logger.debug(f"Enhancement menu update skipped: {e}")
     
     def _show_about(self, sender):
         """Show about dialog"""
@@ -1766,9 +1667,6 @@ class HeyMikeApp(rumps.App):
         return {
             'model': self.current_model,
             'llm_model': self.settings.get('llm_model', 'llama-3.2-1b'),
-            'enhancement_style': self.settings.get('enhancement_style', 'standard'),
-            'transcription_mode': self.hotkey_manager.get_current_mode(),
-            'always_raw': self.settings.get('always_raw', False),
             'enhance_text': self.settings.get('enhance_text', True),
             'language': self.settings.get('language', None)
         }

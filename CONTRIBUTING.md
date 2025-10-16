@@ -72,11 +72,96 @@ python test_magikmike_complete.py
 
 ## 🔄 Development Workflow
 
+### Standard Workflow
 1. **Create feature branch**: `git checkout -b feature/your-feature`
 2. **Make changes** following code standards
 3. **Test thoroughly** using the test suite
 4. **Update documentation** if needed
 5. **Submit pull request** with detailed description
+
+### Testing Changes
+
+#### Option 1: Run from Source (Fastest for iterations)
+```bash
+source venv/bin/activate  # or your virtualenv
+python main.py
+```
+**Pros:** Instant, no rebuild needed  
+**Cons:** Doesn't test bundled app behavior
+
+#### Option 2: Build DMG (Final testing)
+```bash
+# Build the .app bundle
+pyinstaller heymike.spec
+
+# Create DMG installer
+./scripts/create_macos_dmg.sh
+
+# Install and test
+open HeyMike-v1.0.0.dmg
+# Drag to Applications, then launch
+```
+**Pros:** Tests actual user experience  
+**Cons:** Slower, requires permission reset (see below)
+
+---
+
+### ⚠️ **Important: macOS Accessibility Permissions**
+
+**The Issue:**  
+Every time you rebuild the `.app` with PyInstaller, macOS generates a new ad-hoc code signature. This causes macOS to treat it as a "different app," requiring you to **reset Accessibility permissions**.
+
+**Why This Happens:**
+- Unsigned apps get new signatures on each build
+- macOS tracks permissions by: `Bundle ID + Code Signature`
+- Changed signature = New app identity = Reset permissions
+
+**Development Workflow:**
+1. Install new DMG to `/Applications`
+2. Open **System Settings** → **Privacy & Security** → **Accessibility**
+3. Remove old "Hey Mike!" entry (if grayed out)
+4. Click **"+"** and add the new **Hey Mike!** from Applications
+5. Restart the app
+
+**This is NORMAL for development!** End users who install once won't see this.
+
+**Avoiding Resets:**
+- For quick iterations, use `python main.py` (no rebuild needed)
+- Only build DMG for final testing before commits
+- Future: Sign with Apple Developer ID ($99/year) to prevent this
+
+---
+
+### 🏗️ Building for Distribution
+
+#### Prerequisites
+```bash
+# Install PyInstaller (if not already installed)
+pip install pyinstaller
+
+# Verify models are downloaded
+# Launch app and download Whisper + LLM models via menu
+```
+
+#### Build Steps
+```bash
+# 1. Clean previous builds
+rm -rf build dist
+
+# 2. Build the app bundle
+pyinstaller heymike.spec
+
+# 3. Create DMG
+./scripts/create_macos_dmg.sh
+
+# 4. Test the DMG
+open HeyMike-v1.0.0.dmg
+```
+
+#### DMG Contents
+- `Hey Mike!.app` - The bundled application (~473MB)
+- `Applications` symlink - For drag-and-drop install
+- Final DMG size: ~203MB (compressed)
 
 ## 📝 Commit Messages
 
@@ -129,6 +214,86 @@ Consider:
 - Create issues for bugs and features
 - Discussions for questions and ideas
 - Email for security issues
+
+## ✅ Pre-Push Checklist
+
+Before pushing to GitHub or creating a release, ensure:
+
+### Code Quality
+- [ ] All code follows PEP 8 standards
+- [ ] Type hints added for new functions
+- [ ] Docstrings updated for changed functions
+- [ ] No debug print statements or commented-out code
+- [ ] All TODOs resolved or tracked in issues
+
+### Testing
+- [ ] App runs from source (`python main.py`)
+- [ ] DMG builds successfully (`./scripts/create_macos_dmg.sh`)
+- [ ] DMG installs and launches without errors
+- [ ] Hotkey works (Cmd+Shift+Space)
+- [ ] Text enhancement toggle works (ON/OFF)
+- [ ] Audio device selection works
+- [ ] Language selection works
+- [ ] All menu items functional
+- [ ] Accessibility permissions alert shows correctly on first launch
+
+### Documentation
+- [ ] README.md is up to date
+- [ ] CHANGELOG.md updated with changes
+- [ ] CONTRIBUTING.md reflects current workflow
+- [ ] All links in docs are valid (no dead links)
+- [ ] Code comments are clear and accurate
+- [ ] API.md updated if APIs changed
+- [ ] ARCHITECTURE.md updated if structure changed
+
+### Repository Cleanup
+- [ ] No sensitive data (API keys, tokens, personal info)
+- [ ] No large binary files committed (except assets)
+- [ ] `.gitignore` is comprehensive
+- [ ] Lock files removed (`/tmp/.heymike.lock`)
+- [ ] Build artifacts excluded (`build/`, `dist/`, `*.dmg`)
+- [ ] Python cache cleaned (`__pycache__/`, `*.pyc`)
+- [ ] Log files excluded (`logs/*.log`)
+
+### Dependencies
+- [ ] `requirements.txt` is up to date
+- [ ] All dependencies have version pins
+- [ ] No unused dependencies listed
+- [ ] System dependencies documented in README
+
+### Files to Review
+```bash
+# Check for untracked files
+git status
+
+# Check for large files (> 1MB)
+find . -type f -size +1M -not -path "./.git/*" -not -path "./dist/*"
+
+# Check for sensitive patterns
+grep -r "API_KEY\|SECRET\|PASSWORD" --exclude-dir=.git --exclude-dir=node_modules
+
+# Verify .gitignore is working
+git check-ignore -v <file>
+```
+
+### Git Status
+- [ ] All intended changes staged
+- [ ] No unintended files staged
+- [ ] Commit messages follow conventions
+- [ ] Branch is up to date with main/master
+- [ ] No merge conflicts
+
+### Release Specific (for version releases)
+- [ ] Version number updated in:
+  - [ ] `heymike.spec` (version string)
+  - [ ] `scripts/create_macos_dmg.sh` (VERSION variable)
+  - [ ] `README.md` (download links, version mentions)
+  - [ ] `CHANGELOG.md` (new version header)
+- [ ] DMG file named correctly: `HeyMike-vX.Y.Z.dmg`
+- [ ] Release notes prepared
+- [ ] Git tag created: `git tag -a vX.Y.Z -m "Version X.Y.Z"`
+
+---
 
 ## 📄 License
 

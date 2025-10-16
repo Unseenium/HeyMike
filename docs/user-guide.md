@@ -205,10 +205,6 @@ Choose your enhancement model:
 - **Default**: Cmd+Shift+Space
 - **Custom**: Click to set your own
 
-#### Mode Switch (Phase 2)
-- **Cmd+Option+1**: Smart Mode (current)
-- **Cmd+Option+2**: Action Mode (coming soon)
-
 💡 **Tip**: Avoid hotkeys used by other apps (e.g., Spotlight, Alfred).
 
 ### Text Insertion
@@ -519,32 +515,30 @@ Found a bug? Have a feature request?
 ## 🗺️ Roadmap
 
 ### Phase 1 (Current - v1.0)
-- ✅ Smart Mode (AI-enhanced transcription)
+- ✅ AI-enhanced transcription
 - ✅ Visual Overlay (waveform animation)
 - ✅ Menu bar app
 - ✅ Multi-model support
+- ✅ Grammar, punctuation, filler word removal
 
 ### Phase 2 (Q1 2026)
 - 🔜 VS Code extension
-- 🔜 Action Mode (voice notes with context)
+- 🔜 Voice notes with context
 - 🔜 Live status in IDE
 
 ### Phase 3 (Q2 2026)
 - 🔜 Code explanations
 - 🔜 Semantic search
 - 🔜 File navigation by voice
-- 🔜 Advanced Action Mode features
 
 ---
 
 ## 📋 Keyboard Shortcuts
 
-| Hotkey | Action | Phase |
-|--------|--------|-------|
-| **Cmd+Shift+Space** | Start/stop recording | ✅ 1 |
-| **Esc** | Cancel recording/processing | ✅ 1 |
-| **Cmd+Option+1** | Switch to Smart Mode | ✅ 1 |
-| **Cmd+Option+2** | Switch to Action Mode | 🔜 2 |
+| Hotkey | Action |
+|--------|--------|
+| **Cmd+Shift+Space** | Start/stop recording |
+| **Esc** | Cancel recording/processing |
 
 **Note**: Esc works during recording, transcription, and AI enhancement.
 

@@ -89,6 +89,33 @@ class AudioManager:
                 self.on_error(f"Audio initialization failed: {str(e)}")
             return False
     
+    def refresh_device_list(self) -> bool:
+        """
+        Refresh the audio device list by reinitializing PyAudio.
+        This is needed to detect hot-plugged devices like Bluetooth.
+        
+        Returns:
+            True if refresh successful, False otherwise
+        """
+        try:
+            # Only refresh if not currently recording
+            if self.is_recording:
+                self.logger.debug("Skipping device refresh during recording")
+                return False
+            
+            # Close old PyAudio instance
+            if self.pyaudio_instance:
+                self.pyaudio_instance.terminate()
+            
+            # Create new instance to detect new devices
+            self.pyaudio_instance = pyaudio.PyAudio()
+            self.logger.debug("PyAudio device list refreshed")
+            return True
+        except Exception as e:
+            self.logger.error(f"Failed to refresh device list: {e}")
+            # Try to recover by reinitializing
+            return self._initialize_audio()
+    
     def get_input_devices(self) -> List[dict]:
         """
         Get list of available audio input devices
@@ -224,8 +251,17 @@ class AudioManager:
             self.is_recording = False
             
             if self.stream:
-                self.stream.stop_stream()
-                self.stream.close()
+                try:
+                    self.stream.stop_stream()
+                except OSError as e:
+                    # PortAudio internal errors can happen, log but continue cleanup
+                    self.logger.warning(f"Error stopping stream: {e}, continuing cleanup")
+                
+                try:
+                    self.stream.close()
+                except OSError as e:
+                    self.logger.warning(f"Error closing stream: {e}")
+                
                 self.stream = None
             
             # Wait for recording thread to finish

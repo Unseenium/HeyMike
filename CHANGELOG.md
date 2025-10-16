@@ -2,6 +2,38 @@
 
 All notable changes to Hey Mike! will be documented in this file.
 
+## [1.0.1] - 2025-10-16
+
+### Added
+- **Auto-Refresh Audio Devices**: Detects hot-plugged microphones (checks every 10s)
+- **Improved Permission Checks**: Direct link to System Settings for Accessibility permissions
+- **Development Documentation**: Comprehensive CONTRIBUTING.md with workflow and checklist
+- **Better Error Messages**: More detailed logging for permission issues
+
+### Fixed
+- **Text Enhancement Prompt**: Fixed issue where LLM added periods after every word
+- **Module Import Error**: Removed unused NoteClassifier import causing crash
+- **Audio Device Detection**: Proper refresh when Bluetooth devices connect/disconnect
+- **Permission Alert Loop**: Added "Don't Show Again" option for repeated alerts
+
+### Changed
+- **Simplified Text Enhancement**: Single ON/OFF toggle (removed Professional/Casual/Technical styles)
+- **Menu Structure**: Text Enhancement moved to root menu for easier access
+- **Settings UI**: Audio device and language selection now use clickable menus instead of text input
+- **Documentation**: Updated all docs for DMG-only distribution workflow
+
+### Removed
+- **Transcription Modes**: Removed Smart/Action mode distinction (simplified to single mode for Phase 1)
+- **Multiple Enhancement Styles**: Consolidated to single, conservative enhancement
+- **setup.py**: Removed deprecated py2app configuration
+
+### Developer Notes
+- **Accessibility Permissions**: Must be reset after each rebuild (documented in CONTRIBUTING.md)
+- **Phase 2 Files**: NoteClassifier and VSCodeBridge kept in repo but excluded from Phase 1 bundle
+- **Build Size**: 203MB DMG (473MB uncompressed .app)
+
+---
+
 ## [1.0.0] - 2025-10-05
 
 ### Added - Phase 1 Complete! 🎉

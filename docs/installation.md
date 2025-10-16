@@ -2,25 +2,14 @@
 
 ## ⚡ Quick Start (5 Minutes)
 
-### Method 1: DMG Installer (Recommended)
+### DMG Installer (Recommended)
 1. Download `HeyMike-v1.0.dmg`
 2. Open the DMG
-3. Double-click **`Install.command`**
-4. Follow the on-screen instructions
+3. Drag **Hey Mike!** to Applications folder
+4. Open from Applications
 5. Done! 🚀
 
-### Method 2: Manual Installation
-```bash
-# Clone or download the repository
-git clone https://github.com/Unseenium/HeyMike.git
-cd HeyMike
-
-# Run the installer
-./scripts/install.sh
-
-# Launch Hey Mike!
-heymike
-```
+**Note:** On first launch, grant Accessibility and Microphone permissions when prompted.
 
 ---
 
@@ -137,21 +126,16 @@ tail -f /path/to/HeyMike/logs/heymike.log
    - Open Hey Mike! menu
    - Settings → Model → Select "large"
 
-### "Python not found" error
-```bash
-# Install Python 3.11+
-brew install python@3.11
+### App won't launch
+1. **Right-click** Hey Mike! in Applications
+2. Select **"Open"** (bypasses Gatekeeper warning)
+3. Grant Accessibility permission in System Settings
+4. Grant Microphone permission when prompted
 
-# Verify installation
-python3 --version  # Should show 3.11 or higher
-```
-
-### Virtual environment issues
-```bash
-# Recreate virtual environment
-rm -rf ~/.heymike_venv
-./scripts/install.sh
-```
+### Models not downloading
+- Check internet connection
+- Free up disk space (~2GB needed)
+- Restart the app and try again
 
 ---
 
@@ -159,21 +143,19 @@ rm -rf ~/.heymike_venv
 
 To completely remove Hey Mike!:
 
+1. **Delete the app:**
+   - Drag **Hey Mike!** from Applications to Trash
+
+2. **Remove user data (optional):**
 ```bash
-# Remove virtual environment
-rm -rf ~/.heymike_venv
-
-# Remove launcher
-rm ~/.local/bin/heymike
-
 # Remove settings
 rm ~/.heymike_settings.json
 
-# Remove application (if installed from DMG)
-rm -rf /path/to/HeyMike
+# Remove downloaded models
+rm -rf ~/Library/Application\ Support/HeyMike/Models
 
 # Remove logs
-rm -rf ~/Library/Logs/HeyMike  # If logs were moved there
+rm -rf ~/Library/Logs/HeyMike
 ```
 
 ---

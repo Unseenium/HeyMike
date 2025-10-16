@@ -40,11 +40,17 @@ class TextInsertionManager:
             system_element = AXUIElementCreateSystemWide()
             error = AXUIElementCopyAttributeValue(system_element, kAXFocusedUIElementAttribute, None)
             
+            # Error codes:
+            # 0 = kAXErrorSuccess (permissions granted)
+            # -25201 = kAXErrorAPIDisabled (API is disabled - permissions not granted)
+            # -25204 = kAXErrorNotImplemented (feature not available)
+            
             if error == 0:
-                self.logger.info("Accessibility permissions are granted")
+                self.logger.info("✅ Accessibility permissions are granted")
                 return True
             else:
-                self.logger.warning("Accessibility permissions may not be granted")
+                self.logger.warning(f"⚠️ Accessibility permission check failed with error code: {error}")
+                # Common error: -25201 means permissions not granted
                 return False
                 
         except Exception as e:

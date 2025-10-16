@@ -36,14 +36,9 @@ class AppSettings:
             'audio_feedback': True,
             'notifications': True,
             'first_run': True,
-            # Transcription mode settings
-            'transcription_mode': 'smart',  # smart or action
-            'always_raw': False,  # Disable AI enhancement (always use raw transcription)
             # LLM Enhancement settings
-            'enhance_text': True,  # Enable text enhancement
-            'enhancement_style': 'standard',  # standard, professional, casual, technical
-            'llm_model': 'llama-3.2-1b',  # LLM model to use
-            'show_enhancement_preview': False  # Show before/after preview
+            'enhance_text': True,  # Enable text enhancement (grammar, punctuation, filler words)
+            'llm_model': 'llama-3.2-1b'  # LLM model to use
         }
         
         # Current settings
@@ -256,9 +251,7 @@ class AppSettings:
         """
         return {
             'enhance_text': self.get('enhance_text'),
-            'enhancement_style': self.get('enhancement_style'),
-            'llm_model': self.get('llm_model'),
-            'show_enhancement_preview': self.get('show_enhancement_preview')
+            'llm_model': self.get('llm_model')
         }
     
     def validate_settings(self) -> bool:

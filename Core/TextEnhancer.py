@@ -10,24 +10,10 @@ from Core.MLXLLMManager import MLXLLMManager
 class TextEnhancer:
     """Enhances transcribed text using local LLM"""
     
-    # Enhancement styles with different prompts
-    ENHANCEMENT_STYLES = {
-        'standard': """Fix this transcribed speech by adding punctuation, fixing capitalization, and removing filler words (um, uh, like, you know). Output ONLY the corrected text, nothing else.
-
-{text}""",
-        
-        'professional': """Fix this text to be professional: add punctuation, fix capitalization, remove filler words. Output ONLY the corrected text, no explanations.
-
-{text}""",
-        
-        'casual': """Clean up this text: add punctuation and fix capitalization while keeping it casual and natural. Output ONLY the corrected text.
-
-{text}""",
-        
-        'technical': """Fix this technical text: add punctuation, fix capitalization, correct terminology. Output ONLY the corrected text.
+    # Simple enhancement prompt (restored from working version)
+    ENHANCEMENT_PROMPT = """Fix this transcribed speech by adding punctuation, fixing capitalization, and removing filler words (um, uh, like, you know). Output ONLY the corrected text, nothing else.
 
 {text}"""
-    }
     
     def __init__(self, llm_manager: Optional[MLXLLMManager] = None):
         """
@@ -39,19 +25,17 @@ class TextEnhancer:
         self.logger = logging.getLogger(__name__)
         self.llm = llm_manager or MLXLLMManager()
         self.enabled = True
-        self.style = 'standard'
         
         # Performance tracking
         self.enhancement_count = 0
         self.total_enhancement_time = 0.0
     
-    def enhance(self, text: str, style: Optional[str] = None) -> str:
+    def enhance(self, text: str) -> str:
         """
         Enhance transcribed text with LLM
         
         Args:
             text: Raw transcribed text
-            style: Enhancement style ('standard', 'professional', 'casual', 'technical')
             
         Returns:
             Enhanced text, or original if enhancement fails/disabled
@@ -75,15 +59,10 @@ class TextEnhancer:
             import time
             start_time = time.time()
             
-            # Get enhancement style
-            enhancement_style = style or self.style
-            if enhancement_style not in self.ENHANCEMENT_STYLES:
-                enhancement_style = 'standard'
-            
             # Create prompt
-            prompt = self.ENHANCEMENT_STYLES[enhancement_style].format(text=text)
+            prompt = self.ENHANCEMENT_PROMPT.format(text=text)
             
-            self.logger.info(f"Enhancing text with style: {enhancement_style}")
+            self.logger.info("Enhancing text")
             self.logger.debug(f"Original: {text}")
             
             # Generate enhanced text
@@ -117,20 +96,18 @@ class TextEnhancer:
             self.logger.error(f"Enhancement failed: {str(e)}")
             return text
     
-    def enhance_async(self, text: str, style: Optional[str] = None,
-                     callback: Optional[callable] = None) -> None:
+    def enhance_async(self, text: str, callback: Optional[callable] = None) -> None:
         """
         Enhance text asynchronously
         
         Args:
             text: Raw transcribed text
-            style: Enhancement style
             callback: Callback function that receives enhanced text
         """
         import threading
         
         def enhance_thread():
-            enhanced = self.enhance(text, style)
+            enhanced = self.enhance(text)
             if callback:
                 callback(enhanced)
         
@@ -163,6 +140,10 @@ class TextEnhancer:
         
         text = text.strip()
         
+        # Remove excessive line breaks (LLM sometimes adds them)
+        # Replace multiple newlines with single space
+        text = ' '.join(line.strip() for line in text.split('\n') if line.strip())
+        
         # Remove markdown formatting
         text = text.replace("**", "").replace("__", "").replace("*", "")
         
@@ -181,28 +162,6 @@ class TextEnhancer:
         self.enabled = enabled
         self.logger.info(f"Text enhancement {'enabled' if enabled else 'disabled'}")
     
-    def set_style(self, style: str) -> bool:
-        """
-        Set enhancement style
-        
-        Args:
-            style: Style name
-            
-        Returns:
-            True if style is valid, False otherwise
-        """
-        if style in self.ENHANCEMENT_STYLES:
-            self.style = style
-            self.logger.info(f"Enhancement style set to: {style}")
-            return True
-        else:
-            self.logger.warning(f"Invalid style: {style}")
-            return False
-    
-    def get_available_styles(self) -> list:
-        """Get list of available enhancement styles"""
-        return list(self.ENHANCEMENT_STYLES.keys())
-    
     def get_stats(self) -> Dict[str, Any]:
         """
         Get enhancement statistics
@@ -215,7 +174,6 @@ class TextEnhancer:
         
         return {
             'enabled': self.enabled,
-            'style': self.style,
             'enhancement_count': self.enhancement_count,
             'total_time': self.total_enhancement_time,
             'average_time': avg_time
