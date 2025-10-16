@@ -217,6 +217,128 @@ class HeyMikeApp(rumps.App):
         except Exception as e:
             self.logger.error(f"Error setting SF Symbol: {e}", exc_info=True)
     
+    def _setup_audio_device_menu(self):
+        """Setup audio device submenu with clickable device options"""
+        self._refresh_audio_device_menu()
+    
+    def _refresh_audio_device_menu(self):
+        """Refresh the audio device menu with current devices (handles hot-plugging)"""
+        try:
+            # Clear existing items (only if already initialized)
+            if hasattr(self.audio_menu, '_menu') and self.audio_menu._menu is not None:
+                self.audio_menu.clear()
+            self.audio_items_map.clear()
+            
+            # Get devices - this should work even if empty
+            devices = self.audio_manager.get_input_devices()
+            self.logger.info(f"Found {len(devices)} audio input devices")
+            
+            # Log each device for debugging
+            for d in devices:
+                self.logger.info(f"  Device {d['index']}: {d['name']} ({d['channels']} channels, {d['sample_rate']} Hz)")
+            
+            current_device = self.settings.get('audio_device', 'Default')
+            
+            # Add system default option
+            is_default = current_device == 'Default' or current_device is None
+            check = "✓ " if is_default else "   "
+            
+            def make_default_callback():
+                def callback(sender):
+                    self._select_audio_device(None)
+                return callback
+            
+            default_item = rumps.MenuItem(f"{check}🔊 System Default", callback=make_default_callback())
+            self.audio_menu.add(default_item)
+            self.audio_items_map['default'] = default_item
+            
+            if devices:
+                self.audio_menu.add(rumps.separator)
+                
+                # Add each device
+                for d in devices:
+                    is_current = d['index'] == current_device
+                    check = "✓ " if is_current else "   "
+                    
+                    def make_device_callback(device_index, device_name):
+                        def callback(sender):
+                            self._select_audio_device(device_index)
+                        return callback
+                    
+                    device_item = rumps.MenuItem(
+                        f"{check}🎙️ {d['name']}",
+                        callback=make_device_callback(d['index'], d['name'])
+                    )
+                    self.audio_menu.add(device_item)
+                    self.audio_items_map[d['index']] = device_item
+                
+                self.logger.info(f"✅ Audio device menu populated with {len(devices)} devices")
+            else:
+                self.audio_menu.add(rumps.separator)
+                no_devices_item = rumps.MenuItem("⚠️ No microphones found", callback=None)
+                self.audio_menu.add(no_devices_item)
+                self.logger.warning("No audio input devices found")
+            
+            # Add refresh button at the bottom
+            self.audio_menu.add(rumps.separator)
+            refresh_item = rumps.MenuItem("🔄 Refresh Devices", callback=self._refresh_audio_devices_callback)
+            self.audio_menu.add(refresh_item)
+                    
+        except Exception as e:
+            self.logger.error(f"Error refreshing audio device menu: {e}", exc_info=True)
+            # Clear menu and show error (only if menu is initialized)
+            if hasattr(self.audio_menu, '_menu') and self.audio_menu._menu is not None:
+                self.audio_menu.clear()
+            error_item = rumps.MenuItem(f"⚠️ Error: {str(e)[:50]}", callback=None)
+            self.audio_menu.add(error_item)
+    
+    def _refresh_audio_devices_callback(self, sender):
+        """Callback for refresh button"""
+        self.logger.info("Refreshing audio devices...")
+        self._refresh_audio_device_menu()
+        self._show_notification("🔄 Devices Refreshed", "Audio device list updated")
+    
+    def _setup_language_menu(self):
+        """Setup language submenu with clickable language options"""
+        try:
+            current_lang = self.settings.get('language', None)
+            
+            # Common languages with flags
+            languages = {
+                None: ('🌍 Auto-Detect', 'Automatic'),
+                'en': ('🇺🇸 English', 'English'),
+                'es': ('🇪🇸 Spanish', 'Español'),
+                'fr': ('🇫🇷 French', 'Français'),
+                'de': ('🇩🇪 German', 'Deutsch'),
+                'it': ('🇮🇹 Italian', 'Italiano'),
+                'pt': ('🇧🇷 Portuguese', 'Português'),
+                'ru': ('🇷🇺 Russian', 'Русский'),
+                'ja': ('🇯🇵 Japanese', '日本語'),
+                'ko': ('🇰🇷 Korean', '한국어'),
+                'zh': ('🇨🇳 Chinese', '中文'),
+                'ar': ('🇸🇦 Arabic', 'العربية'),
+                'hi': ('🇮🇳 Hindi', 'हिन्दी'),
+            }
+            
+            for lang_code, (display_name, native_name) in languages.items():
+                is_current = lang_code == current_lang
+                check = "✓ " if is_current else "   "
+                
+                def make_lang_callback(code):
+                    def callback(sender):
+                        self._select_language(code)
+                    return callback
+                
+                lang_item = rumps.MenuItem(
+                    f"{check}{display_name}",
+                    callback=make_lang_callback(lang_code)
+                )
+                self.language_menu.add(lang_item)
+                self.language_items_map[lang_code] = lang_item
+                
+        except Exception as e:
+            self.logger.warning(f"Could not setup language menu: {e}")
+    
     def _setup_menu(self):
         """Setup the menu bar menu"""
         
@@ -355,15 +477,69 @@ class HeyMikeApp(rumps.App):
         hotkey_item = rumps.MenuItem(f"⌨️ Hotkey: {hotkey_display}", callback=self._show_hotkey_settings)
         self.settings_menu.add(hotkey_item)
         
-        audio_item = rumps.MenuItem("🎙️ Audio Device", callback=self._show_audio_settings)
-        self.settings_menu.add(audio_item)
+        # Audio Device submenu with clickable options (auto-refreshes on open)
+        self.audio_menu = rumps.MenuItem("🎙️ Audio Device")
+        self.audio_items_map = {}
+        self._setup_audio_device_menu()
         
-        language_item = rumps.MenuItem("🌍 Language", callback=self._show_language_settings)
-        self.settings_menu.add(language_item)
+        # Store reference to audio menu for automatic refresh
+        # Note: rumps doesn't have a "menu opened" callback, so we use the refresh button
+        self.settings_menu.add(self.audio_menu)
+        
+        # Language submenu with clickable options
+        self.language_menu = rumps.MenuItem("🌍 Language")
+        self.language_items_map = {}
+        self._setup_language_menu()
+        self.settings_menu.add(self.language_menu)
         
         self.settings_menu.add(rumps.separator)
-        enhancement_item = rumps.MenuItem("✨ Text Enhancement", callback=self._show_enhancement_settings)
-        self.settings_menu.add(enhancement_item)
+        
+        # Text Enhancement submenu with clickable options (better UX than typing)
+        self.enhancement_menu = rumps.MenuItem("✨ Text Enhancement")
+        self.enhancement_items_map = {}  # Store references for updates
+        
+        # Get current settings
+        enhance_enabled = self.settings.get('enhance_text', True)
+        current_style = self.settings.get('enhancement_style', 'standard')
+        
+        # Enable/Disable toggle
+        status_icon = "✅" if enhance_enabled else "❌"
+        enable_toggle = rumps.MenuItem(
+            f"{status_icon} Enhancement: {'ON' if enhance_enabled else 'OFF'}",
+            callback=self._toggle_enhancement
+        )
+        self.enhancement_menu.add(enable_toggle)
+        self.enhancement_items_map['toggle'] = enable_toggle
+        
+        self.enhancement_menu.add(rumps.separator)
+        
+        # Style options
+        enhancement_styles = {
+            'standard': ('📝 Standard', 'Clean and clear'),
+            'professional': ('👔 Professional', 'Formal tone'),
+            'casual': ('😊 Casual', 'Friendly tone'),
+            'technical': ('🔧 Technical', 'Technical writing')
+        }
+        
+        for style_name, (icon, desc) in enhancement_styles.items():
+            is_current = style_name == current_style and enhance_enabled
+            check = "✓ " if is_current else "   "
+            
+            # Create callback with proper closure
+            def make_style_callback(style):
+                def callback(sender):
+                    self._select_enhancement_style(style)
+                return callback
+            
+            style_item = rumps.MenuItem(
+                f"{check}{icon} - {desc}",
+                callback=make_style_callback(style_name)
+            )
+            
+            self.enhancement_menu.add(style_item)
+            self.enhancement_items_map[style_name] = style_item
+        
+        self.settings_menu.add(self.enhancement_menu)
         
         self.settings_menu.add(rumps.separator)
         permissions_item = rumps.MenuItem("🔐 Check Permissions", callback=self._check_permissions_detailed)
@@ -942,136 +1118,193 @@ class HeyMikeApp(rumps.App):
         self._toggle_recording()
     
     def _show_hotkey_settings(self, sender):
-        """Show hotkey configuration dialog"""
+        """Show hotkey configuration dialog with interactive recorder"""
         self.logger.info("Hotkey settings menu item clicked")
         try:
+            from PyQt6.QtWidgets import QApplication
+            from UI.HotkeyRecorder import HotkeyRecorderDialog
+            
+            # Ensure we have QApplication
+            app = QApplication.instance()
+            if app is None:
+                app = QApplication([])
+            
             current_hotkey = self.hotkey_manager.get_record_hotkey_string()
-            message = (
-                "⌨️ Hotkey Configuration\n\n"
-                f"Current hotkey: {current_hotkey}\n\n"
-                "Enter new hotkey combination:\n"
-                "Examples:\n"
-                "• cmd+shift+space\n"
-                "• ctrl+alt+r\n"
-                "• cmd+option+m\n\n"
-                "New hotkey:"
-            )
             
-            response = rumps.Window(
-                message=message,
-                title="⌨️ Hotkey Settings",
-                default_text=current_hotkey,
-                ok="✅ Set Hotkey",
-                cancel="❌ Cancel"
-            ).run()
+            # Show the hotkey recorder dialog
+            dialog = HotkeyRecorderDialog(current_hotkey=current_hotkey)
+            result = dialog.exec()
             
-            if response.clicked:
-                new_hotkey = HotkeyManager.parse_hotkey_string(response.text)
-                if new_hotkey:
-                    self.hotkey_manager.set_record_hotkey(new_hotkey)
-                    self.settings.set('hotkey', response.text)
-                    self.settings.save_settings()
-                    self._show_notification("✅ Hotkey Updated", f"New hotkey: {response.text}")
-                else:
-                    self._show_notification("❌ Invalid Hotkey", "Please use format like 'cmd+shift+space'")
+            if result == dialog.DialogCode.Accepted:
+                new_hotkey_string = dialog.get_hotkey()
+                if new_hotkey_string:
+                    # Convert display format to internal format
+                    # "Cmd + Shift + Space" -> "cmd+shift+space"
+                    internal_format = new_hotkey_string.lower().replace(" + ", "+").replace("cmd", "cmd")
+                    
+                    # Parse and validate
+                    new_hotkey = HotkeyManager.parse_hotkey_string(internal_format)
+                    if new_hotkey:
+                        self.hotkey_manager.set_record_hotkey(new_hotkey)
+                        self.settings.set('hotkey', internal_format)
+                        self.settings.save_settings()
+                        self._show_notification("✅ Hotkey Updated", f"New hotkey: {new_hotkey_string}")
+                        self.logger.info(f"Hotkey updated to: {new_hotkey_string}")
+                        
+                        # Update menu display
+                        hotkey_display = self.hotkey_manager.get_record_hotkey_string()
+                        # Find and update the hotkey menu item
+                        for item in self.settings_menu.values():
+                            if hasattr(item, 'title') and 'Hotkey:' in str(item.title):
+                                item.title = f"⌨️ Hotkey: {hotkey_display}"
+                                break
+                    else:
+                        self._show_notification("❌ Invalid Hotkey", "Could not set hotkey. Please try again.")
+                        self.logger.error(f"Failed to parse hotkey: {internal_format}")
+            else:
+                self.logger.info("Hotkey configuration cancelled")
+                
+        except ImportError:
+            self.logger.warning("PyQt6 not available - falling back to text input")
+            # Fallback to text input if PyQt6 is not available
+            self._show_hotkey_settings_fallback(sender)
         except Exception as e:
             self.logger.error(f"Error in hotkey settings: {str(e)}")
             self._show_notification("❌ Error", f"Hotkey settings error: {str(e)}")
     
-    def _show_audio_settings(self, sender):
-        """Show audio configuration dialog"""
-        self.logger.info("Audio settings menu item clicked")
-        try:
-            # Try to get devices, but provide fallback if it fails
-            try:
-                devices = self.audio_manager.get_input_devices()
-                current_device = self.settings.get('audio_device', 'Default')
-                
-                device_list = []
-                for d in devices:
-                    marker = "🎙️ " if d['index'] == current_device else "   "
-                    device_list.append(f"{marker}{d['index']}: {d['name']}")
-                
-                device_display = "\n".join(device_list)
-                message = (
-                    "🎙️ Audio Device Selection\n\n"
-                    f"Current: {current_device if current_device != 'Default' else 'System Default'}\n\n"
-                    f"Available devices:\n{device_display}\n\n"
-                    "Enter device number (or leave empty for default):"
-                )
-            except Exception as device_error:
-                self.logger.warning(f"Could not enumerate audio devices: {device_error}")
-                message = (
-                    "🎙️ Audio Device Selection\n\n"
-                    "⚠️ Could not list audio devices.\n\n"
-                    "Enter device index (or leave empty for default):"
-                )
-            
-            response = rumps.Window(
-                message=message,
-                title="🎙️ Audio Settings",
-                default_text="",
-                ok="✅ Set Device",
-                cancel="❌ Cancel"
-            ).run()
-            
-            if response.clicked:
-                try:
-                    device_index = int(response.text) if response.text.strip() else None
-                    if self.audio_manager.set_input_device(device_index):
-                        self.settings.set('audio_device', device_index)
-                        self.settings.save_settings()
-                        device_name = "System Default" if device_index is None else f"Device {device_index}"
-                        self._show_notification("✅ Audio Updated", f"Now using: {device_name}")
-                    else:
-                        self._show_notification("❌ Error", "Failed to set audio device")
-                except ValueError:
-                    self._show_notification("❌ Invalid Input", "Please enter a valid device number")
-        except Exception as e:
-            self.logger.error(f"Error in audio settings: {str(e)}")
-            self._show_notification("❌ Error", f"Audio settings error: {str(e)}")
-    
-    def _show_language_settings(self, sender):
-        """Show language configuration dialog"""
-        self.logger.info("Language settings menu item clicked")
-        try:
-            current_lang = self.settings.get('language', 'auto')
-            display_lang = current_lang if current_lang else 'auto'
-            
-            message = (
-                "🌍 Language Configuration\n\n"
-                f"Current: {display_lang}\n\n"
-                "Popular language codes:\n"
-                "• auto - Automatic detection\n"
-                "• en - English\n"
-                "• es - Spanish\n"
-                "• fr - French\n"
-                "• de - German\n"
-                "• ja - Japanese\n"
-                "• zh - Chinese\n\n"
-                "Enter language code:"
-            )
-            
-            response = rumps.Window(
-                message=message,
-                title="🌍 Language Settings",
-                default_text=display_lang,
-                ok="✅ Set Language",
-                cancel="❌ Cancel"
-            ).run()
-            
-            if response.clicked:
-                language = response.text.strip().lower()
-                if language == 'auto':
-                    language = None
-                
-                self.settings.set('language', language)
+    def _show_hotkey_settings_fallback(self, sender):
+        """Fallback hotkey settings using text input (if PyQt6 unavailable)"""
+        current_hotkey = self.hotkey_manager.get_record_hotkey_string()
+        message = (
+            "⌨️ Hotkey Configuration\n\n"
+            f"Current hotkey: {current_hotkey}\n\n"
+            "Enter new hotkey combination:\n"
+            "Examples: cmd+shift+space, ctrl+alt+r\n\n"
+            "New hotkey:"
+        )
+        
+        response = rumps.Window(
+            message=message,
+            title="⌨️ Hotkey Settings",
+            default_text=current_hotkey,
+            ok="✅ Set",
+            cancel="❌ Cancel"
+        ).run()
+        
+        if response.clicked:
+            new_hotkey = HotkeyManager.parse_hotkey_string(response.text)
+            if new_hotkey:
+                self.hotkey_manager.set_record_hotkey(new_hotkey)
+                self.settings.set('hotkey', response.text)
                 self.settings.save_settings()
-                display_text = language if language else 'auto'
-                self._show_notification("✅ Language Updated", f"Language: {display_text}")
+                self._show_notification("✅ Hotkey Updated", f"New hotkey: {response.text}")
+            else:
+                self._show_notification("❌ Invalid Hotkey", "Please use format like 'cmd+shift+space'")
+    
+    def _select_audio_device(self, device_index):
+        """Select an audio input device"""
+        self.logger.info(f"Audio device selected: {device_index}")
+        try:
+            if self.audio_manager.set_input_device(device_index):
+                self.settings.set('audio_device', device_index if device_index is not None else 'Default')
+                self.settings.save_settings()
+                
+                # Update menu display
+                self._update_audio_device_menu_display(device_index)
+                
+                # Show notification
+                if device_index is None:
+                    device_name = "System Default"
+                else:
+                    devices = self.audio_manager.get_input_devices()
+                    device_name = next((d['name'] for d in devices if d['index'] == device_index), f"Device {device_index}")
+                
+                self._show_notification("✅ Audio Device Changed", f"Now using: {device_name}")
+                self.logger.info(f"Audio device set to: {device_name}")
+            else:
+                self._show_notification("❌ Error", "Failed to set audio device")
+                
         except Exception as e:
-            self.logger.error(f"Error in language settings: {str(e)}")
-            self._show_notification("❌ Error", f"Language settings error: {str(e)}")
+            self.logger.error(f"Error selecting audio device: {str(e)}")
+            self._show_notification("❌ Error", f"Audio device error: {str(e)}")
+    
+    def _update_audio_device_menu_display(self, current_device):
+        """Update audio device menu to show current selection"""
+        try:
+            # Since we now refresh the entire menu on selection, just call refresh
+            # This ensures the device list is always up-to-date
+            self._refresh_audio_device_menu()
+            self.logger.debug(f"Audio menu updated: current_device={current_device}")
+            
+        except Exception as e:
+            self.logger.debug(f"Audio menu update skipped: {e}")
+    
+    def _select_language(self, language_code):
+        """Select a language for transcription"""
+        self.logger.info(f"Language selected: {language_code}")
+        try:
+            self.settings.set('language', language_code)
+            self.settings.save_settings()
+            
+            # Update menu display
+            self._update_language_menu_display(language_code)
+            
+            # Show notification
+            language_names = {
+                None: '🌍 Auto-Detect',
+                'en': '🇺🇸 English',
+                'es': '🇪🇸 Spanish',
+                'fr': '🇫🇷 French',
+                'de': '🇩🇪 German',
+                'it': '🇮🇹 Italian',
+                'pt': '🇧🇷 Portuguese',
+                'ru': '🇷🇺 Russian',
+                'ja': '🇯🇵 Japanese',
+                'ko': '🇰🇷 Korean',
+                'zh': '🇨🇳 Chinese',
+                'ar': '🇸🇦 Arabic',
+                'hi': '🇮🇳 Hindi',
+            }
+            
+            lang_display = language_names.get(language_code, f"Language: {language_code}")
+            self._show_notification("✅ Language Changed", lang_display)
+            self.logger.info(f"Language set to: {language_code}")
+            
+        except Exception as e:
+            self.logger.error(f"Error selecting language: {str(e)}")
+            self._show_notification("❌ Error", f"Language selection error: {str(e)}")
+    
+    def _update_language_menu_display(self, current_lang):
+        """Update language menu to show current selection"""
+        try:
+            for lang_code, menu_item in self.language_items_map.items():
+                is_current = lang_code == current_lang
+                check = "✓ " if is_current else "   "
+                
+                # Get original display name
+                language_names = {
+                    None: '🌍 Auto-Detect',
+                    'en': '🇺🇸 English',
+                    'es': '🇪🇸 Spanish',
+                    'fr': '🇫🇷 French',
+                    'de': '🇩🇪 German',
+                    'it': '🇮🇹 Italian',
+                    'pt': '🇧🇷 Portuguese',
+                    'ru': '🇷🇺 Russian',
+                    'ja': '🇯🇵 Japanese',
+                    'ko': '🇰🇷 Korean',
+                    'zh': '🇨🇳 Chinese',
+                    'ar': '🇸🇦 Arabic',
+                    'hi': '🇮🇳 Hindi',
+                }
+                
+                display_name = language_names.get(lang_code, str(lang_code))
+                menu_item.title = f"{check}{display_name}"
+            
+            self.logger.debug(f"Language menu updated: current_lang={current_lang}")
+            
+        except Exception as e:
+            self.logger.debug(f"Language menu update skipped: {e}")
     
     def _is_likely_english(self, text: str) -> bool:
         """
@@ -1167,63 +1400,103 @@ class HeyMikeApp(rumps.App):
             check = "✓ " if mode_name == current_mode else "   "
             mode_item.title = f"{check}{icon} - {desc} ({hotkey})"
     
-    def _show_enhancement_settings(self, sender):
-        """Show text enhancement configuration dialog"""
-        self.logger.info("Enhancement settings menu item clicked")
+    def _toggle_enhancement(self, sender):
+        """Toggle text enhancement on/off"""
+        self.logger.info("Enhancement toggle clicked")
+        try:
+            current_state = self.settings.get('enhance_text', True)
+            new_state = not current_state
+            
+            # Update settings
+            self.settings.set('enhance_text', new_state)
+            self.settings.save_settings()
+            
+            # Update text enhancer
+            self.text_enhancer.set_enabled(new_state)
+            
+            # Update menu display
+            self._update_enhancement_menu_display()
+            
+            # Show notification
+            if new_state:
+                current_style = self.settings.get('enhancement_style', 'standard')
+                self._show_notification("✨ Enhancement Enabled", f"Using {current_style} style")
+                self.logger.info(f"Enhancement enabled with style: {current_style}")
+            else:
+                self._show_notification("Enhancement Disabled", "Text will not be enhanced")
+                self.logger.info("Enhancement disabled")
+                
+        except Exception as e:
+            self.logger.error(f"Error toggling enhancement: {str(e)}")
+            self._show_notification("❌ Error", f"Enhancement toggle error: {str(e)}")
+    
+    def _select_enhancement_style(self, style: str):
+        """Select a specific enhancement style"""
+        self.logger.info(f"Enhancement style selected: {style}")
+        try:
+            # Enable enhancement if it was disabled
+            was_disabled = not self.settings.get('enhance_text', True)
+            
+            # Update settings
+            self.settings.set('enhance_text', True)
+            self.settings.set('enhancement_style', style)
+            self.settings.save_settings()
+            
+            # Update text enhancer
+            self.text_enhancer.set_enabled(True)
+            self.text_enhancer.set_style(style)
+            
+            # Update menu display
+            self._update_enhancement_menu_display()
+            
+            # Show notification
+            style_names = {
+                'standard': 'Standard (Clean and clear)',
+                'professional': 'Professional (Formal tone)',
+                'casual': 'Casual (Friendly tone)',
+                'technical': 'Technical (Technical writing)'
+            }
+            
+            notification_msg = style_names.get(style, style)
+            if was_disabled:
+                notification_msg = f"Enhancement enabled with {notification_msg}"
+            
+            self._show_notification("✨ Style Updated", notification_msg)
+            self.logger.info(f"Enhancement style set to: {style}")
+            
+        except Exception as e:
+            self.logger.error(f"Error selecting enhancement style: {str(e)}")
+            self._show_notification("❌ Error", f"Style selection error: {str(e)}")
+    
+    def _update_enhancement_menu_display(self):
+        """Update enhancement menu to show current selection"""
         try:
             enhance_enabled = self.settings.get('enhance_text', True)
             current_style = self.settings.get('enhancement_style', 'standard')
             
-            # Build status message
-            status = "✅ Enabled" if enhance_enabled else "❌ Disabled"
-            llm_status = "✅ Loaded" if self.llm_manager.is_model_loaded() else "⏳ Loading..."
+            # Update toggle item
+            if 'toggle' in self.enhancement_items_map:
+                status_icon = "✅" if enhance_enabled else "❌"
+                self.enhancement_items_map['toggle'].title = f"{status_icon} Enhancement: {'ON' if enhance_enabled else 'OFF'}"
             
-            message = (
-                "✨ Text Enhancement Settings\n\n"
-                f"Status: {status}\n"
-                f"LLM Model: {llm_status}\n"
-                f"Style: {current_style}\n\n"
-                "Enhancement improves your transcriptions by:\n"
-                "• Adding proper punctuation\n"
-                "• Fixing capitalization\n"
-                "• Removing filler words (um, uh)\n"
-                "• Improving grammar\n\n"
-                "Available styles:\n"
-                "• standard - Clean and clear\n"
-                "• professional - Formal tone\n"
-                "• casual - Friendly tone\n"
-                "• technical - Technical writing\n\n"
-                "Enter style (or 'off' to disable):"
-            )
+            # Update style checkmarks
+            enhancement_styles = {
+                'standard': ('📝 Standard', 'Clean and clear'),
+                'professional': ('👔 Professional', 'Formal tone'),
+                'casual': ('😊 Casual', 'Friendly tone'),
+                'technical': ('🔧 Technical', 'Technical writing')
+            }
             
-            response = rumps.Window(
-                message=message,
-                title="✨ Enhancement Settings",
-                default_text=current_style,
-                ok="✅ Apply",
-                cancel="❌ Cancel"
-            ).run()
+            for style_name, (icon, desc) in enhancement_styles.items():
+                if style_name in self.enhancement_items_map:
+                    is_current = style_name == current_style and enhance_enabled
+                    check = "✓ " if is_current else "   "
+                    self.enhancement_items_map[style_name].title = f"{check}{icon} - {desc}"
             
-            if response.clicked:
-                user_input = response.text.strip().lower()
-                
-                if user_input == 'off':
-                    self.settings.set('enhance_text', False)
-                    self.text_enhancer.set_enabled(False)
-                    self.settings.save_settings()
-                    self._show_notification("✨ Enhancement Disabled", "Text will not be enhanced")
-                elif user_input in ['standard', 'professional', 'casual', 'technical']:
-                    self.settings.set('enhance_text', True)
-                    self.settings.set('enhancement_style', user_input)
-                    self.text_enhancer.set_enabled(True)
-                    self.text_enhancer.set_style(user_input)
-                    self.settings.save_settings()
-                    self._show_notification("✨ Enhancement Updated", f"Style: {user_input}")
-                else:
-                    self._show_notification("❌ Invalid Input", "Use: standard, professional, casual, technical, or off")
+            self.logger.debug(f"Enhancement menu updated: enabled={enhance_enabled}, style={current_style}")
+            
         except Exception as e:
-            self.logger.error(f"Error in enhancement settings: {str(e)}")
-            self._show_notification("❌ Error", f"Enhancement settings error: {str(e)}")
+            self.logger.debug(f"Enhancement menu update skipped: {e}")
     
     def _show_about(self, sender):
         """Show about dialog"""
