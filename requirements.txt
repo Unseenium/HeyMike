@@ -36,3 +36,6 @@ huggingface-hub>=0.20.0
 # Visual overlay (Phase 1)
 PyQt6>=6.5.0
 
+# Wake word detection (Phase 4)
+webrtcvad>=2.0.10
+

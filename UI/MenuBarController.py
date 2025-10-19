@@ -24,6 +24,7 @@ from VSCodeBridge import VSCodeBridge
 from AppSettings import AppSettings
 # Note: NoteClassifier excluded - Phase 2 feature only
 from TranscriptionHistory import TranscriptionHistory
+from WakeWordDetector import WakeWordDetector
 
 class HeyMikeApp(rumps.App):
     """Main Hey Mike! application with menu bar interface"""
@@ -99,6 +100,21 @@ class HeyMikeApp(rumps.App):
         # Initialize transcription history (Hybrid approach: Option 5)
         self.transcription_history = TranscriptionHistory(max_items=10)
         
+        # Initialize Wake Word Detector (Phase 4)
+        self.wake_word_detector: Optional[WakeWordDetector] = None
+        try:
+            wake_word_settings = self.settings.get_wake_word_settings()
+            self.wake_word_detector = WakeWordDetector(
+                whisper_manager=self.whisper_manager,
+                vad_aggressiveness=wake_word_settings['vad_aggressiveness'],
+                buffer_duration=wake_word_settings['buffer_duration'],
+                trigger_threshold=wake_word_settings['trigger_threshold']
+            )
+            self.logger.info(f"Wake word detector initialized - id={id(self.wake_word_detector)}")
+        except Exception as e:
+            self.logger.warning(f"Wake word detector initialization failed: {e}")
+            self.logger.info("App will continue without wake word detection")
+        
         # Initialize VS Code Bridge (v2.0+)
         # Initialize VS Code Bridge (Phase 2 feature)
         # Gracefully degrade if SocketIO fails in bundled app
@@ -155,6 +171,13 @@ class HeyMikeApp(rumps.App):
         self.whisper_manager.on_transcription_start = self._on_transcription_start
         self.whisper_manager.on_transcription_complete = self._on_transcription_complete
         
+        # Wake word callbacks
+        if self.wake_word_detector:
+            self.wake_word_detector.on_wake_word_detected = self._on_wake_word_detected
+            self.wake_word_detector.on_listening_started = self._on_wake_word_listening_started
+            self.wake_word_detector.on_listening_stopped = self._on_wake_word_listening_stopped
+            self.wake_word_detector.on_error = self._on_error
+        
         # Error callbacks
         self.audio_manager.on_error = self._on_error
         self.whisper_manager.on_error = self._on_error
@@ -166,7 +189,13 @@ class HeyMikeApp(rumps.App):
         try:
             self.settings.load_settings()
             self.current_model = self.settings.get('model', 'tiny')
+            
+            # Always reset wake word to OFF on startup (safety feature)
+            self.settings.set('wake_word_enabled', False)
+            self.settings.save_settings()
+            
             self.logger.debug(f"Loaded current model from settings: {self.current_model}")
+            self.logger.info("Wake word detection reset to OFF (default on startup)")
         except Exception as e:
             self.logger.warning(f"Could not load settings early: {str(e)}")
             self.current_model = 'tiny'  # Fallback
@@ -455,6 +484,15 @@ class HeyMikeApp(rumps.App):
             callback=self._toggle_enhancement
         )
         self.menu.add(self.enhancement_toggle)
+        
+        # Wake word toggle (Phase 4)
+        wake_word_enabled = self.settings.get('wake_word_enabled', False)
+        wake_word_icon = "✅" if wake_word_enabled else "❌"
+        self.wake_word_toggle = rumps.MenuItem(
+            f"👂 Wake Word: {wake_word_icon} {'ON' if wake_word_enabled else 'OFF'}",
+            callback=self._toggle_wake_word
+        )
+        self.menu.add(self.wake_word_toggle)
         self.menu.add(rumps.separator)
         
         # Settings section with icons
@@ -532,6 +570,15 @@ class HeyMikeApp(rumps.App):
                 self.logger.info("Starting VS Code Bridge server on port 8765")
                 self.vscode_bridge.start()
                 self.logger.info("VS Code Bridge started - VS Code extension can now connect")
+            
+            # Start wake word detection if enabled
+            if self.wake_word_detector:
+                wake_word_enabled = self.settings.get('wake_word_enabled', False)
+                if wake_word_enabled:
+                    self.logger.info("Starting wake word detection...")
+                    self.wake_word_detector.start_listening()
+                else:
+                    self.logger.info("Wake word detection disabled in settings")
             
             # Menu already created with correct model selected - no need to update during init
             self.logger.debug(f"Menu created with current model: {self.current_model}")
@@ -689,6 +736,9 @@ class HeyMikeApp(rumps.App):
             self._update_status("Ready")
             self._update_menu_icon("🎤")
             self.record_item.title = "🔴 Start Recording"
+        
+        # Restart wake word listening if it was enabled
+        self._restart_wake_word_if_enabled()
     
     def _cancel_recording(self):
         """Cancel current recording or processing"""
@@ -708,6 +758,9 @@ class HeyMikeApp(rumps.App):
             self.record_item.title = "Start Recording"
             
             self.logger.info("Recording cancelled by user (Esc)")
+            
+            # Restart wake word listening if it was enabled
+            self._restart_wake_word_if_enabled()
         
         # Edge case 2: Cancel during processing/transcription
         elif self.is_processing:
@@ -723,6 +776,9 @@ class HeyMikeApp(rumps.App):
             self.record_item.title = "Start Recording"
             
             self.logger.info("Transcription cancelled by user (Esc)")
+            
+            # Restart wake word listening if it was enabled
+            self._restart_wake_word_if_enabled()
         
         # Edge case 3: Multiple Esc presses (already idle)
         else:
@@ -801,6 +857,9 @@ class HeyMikeApp(rumps.App):
         # Show complete state in overlay (thread-safe)
         if self.overlay_manager:
             self.overlay_manager.show_complete()
+        
+        # Restart wake word listening if it was enabled (after transcription completes)
+        self._restart_wake_word_if_enabled()
         
         # Send processing state to VS Code
         if self.vscode_bridge:
@@ -1399,6 +1458,51 @@ class HeyMikeApp(rumps.App):
             self.logger.error(f"Error toggling enhancement: {str(e)}")
             self._show_notification("❌ Error", f"Enhancement toggle error: {str(e)}")
     
+    def _toggle_wake_word(self, sender):
+        """Toggle wake word detection on/off"""
+        self.logger.info("Wake word toggle clicked")
+        self.logger.info(f"DEBUG: wake_word_detector={self.wake_word_detector is not None}, id={id(self.wake_word_detector) if self.wake_word_detector else 'None'}")
+        
+        if not self.wake_word_detector:
+            self._show_notification("❌ Not Available", "Wake word detector not initialized")
+            return
+        
+        try:
+            current_state = self.settings.get('wake_word_enabled', False)
+            new_state = not current_state
+            
+            # Update settings
+            self.settings.set('wake_word_enabled', new_state)
+            self.settings.save_settings()
+            
+            # Update menu display
+            status_icon = "✅" if new_state else "❌"
+            self.wake_word_toggle.title = f"👂 Wake Word: {status_icon} {'ON' if new_state else 'OFF'}"
+            
+            # Start or stop wake word detection
+            if new_state:
+                if self.wake_word_detector.start_listening():
+                    self._show_notification(
+                        "👂 Wake Word Enabled", 
+                        "Say 'Hey Mike' to start recording hands-free"
+                    )
+                    self.logger.info("Wake word detection enabled")
+                else:
+                    # Failed to start, revert
+                    self.settings.set('wake_word_enabled', False)
+                    self.settings.save_settings()
+                    status_icon = "❌"
+                    self.wake_word_toggle.title = f"👂 Wake Word: {status_icon} OFF"
+                    self._show_notification("❌ Error", "Failed to start wake word detection")
+            else:
+                self.wake_word_detector.stop_listening()
+                self._show_notification("Wake Word Disabled", "Use hotkey to start recording")
+                self.logger.info("Wake word detection disabled")
+                
+        except Exception as e:
+            self.logger.error(f"Error toggling wake word: {str(e)}")
+            self._show_notification("❌ Error", f"Wake word toggle error: {str(e)}")
+    
     def _show_about(self, sender):
         """Show about dialog"""
         self.logger.info("About dialog opened")
@@ -1662,6 +1766,58 @@ class HeyMikeApp(rumps.App):
         self.logger.error(f"Error: {error_message}")
         self._show_notification("Error", error_message)
     
+    def _on_wake_word_detected(self, command: str):
+        """
+        Called when wake word is detected
+        
+        Wake word simply triggers recording - command processing happens in VS Code extension.
+        
+        Args:
+            command: Remaining text after wake word (ignored - for logging only)
+        """
+        self.logger.info(f"👂 Wake word detected! Starting recording...")
+        
+        # Log if there was text after wake word (for debugging)
+        if command:
+            self.logger.debug(f"Detected speech after wake word: '{command}' (will be captured in recording)")
+        
+        # IMPORTANT: Stop wake word listening before starting recording
+        # This prevents PyAudio stream conflicts
+        if self.wake_word_detector:
+            self.wake_word_detector.stop_listening()
+            self.logger.info("Wake word listening paused for recording")
+        
+        # Simply start recording - VS Code extension handles command processing
+        self._start_recording()
+    
+    def _on_wake_word_listening_started(self):
+        """Called when wake word listening starts"""
+        self.logger.info("Wake word listening started")
+        # Update menu icon to show listening state
+        if hasattr(self, 'status_item'):
+            self._update_status("👂 Listening for wake word...")
+    
+    def _on_wake_word_listening_stopped(self):
+        """Called when wake word listening stops"""
+        self.logger.info("Wake word listening stopped")
+        # Restore ready state
+        if hasattr(self, 'status_item'):
+            self._update_status("Ready")
+    
+    def _restart_wake_word_if_enabled(self):
+        """Restart wake word detection if it was enabled (after recording finishes)"""
+        if not self.wake_word_detector:
+            return
+        
+        # Check if wake word was enabled in settings
+        wake_word_enabled = self.settings.get('wake_word_enabled', False)
+        if wake_word_enabled and not self.wake_word_detector.is_listening:
+            self.logger.info("Restarting wake word detection after recording...")
+            if self.wake_word_detector.start_listening():
+                self.logger.info("Wake word detection restarted successfully")
+            else:
+                self.logger.error("Failed to restart wake word detection")
+    
     def _get_settings_for_vscode(self) -> Dict[str, Any]:
         """Get current settings for VS Code extension"""
         return {
@@ -1675,6 +1831,11 @@ class HeyMikeApp(rumps.App):
         """Clean up resources"""
         try:
             self.logger.info("Starting cleanup...")
+            
+            # Stop wake word detection
+            if hasattr(self, 'wake_word_detector') and self.wake_word_detector:
+                self.logger.info("Stopping wake word detection...")
+                self.wake_word_detector.cleanup()
             
             # Stop VS Code Bridge
             if hasattr(self, 'vscode_bridge'):

@@ -38,7 +38,13 @@ class AppSettings:
             'first_run': True,
             # LLM Enhancement settings
             'enhance_text': True,  # Enable text enhancement (grammar, punctuation, filler words)
-            'llm_model': 'llama-3.2-1b'  # LLM model to use
+            'llm_model': 'llama-3.2-1b',  # LLM model to use
+            # Wake word detection settings (Phase 4)
+            'wake_word_enabled': False,  # Enable/disable wake word detection (default OFF until stable)
+            'wake_word_phrase': 'hey mike',  # Wake word phrase
+            'wake_word_vad_aggressiveness': 3,  # VAD aggressiveness (0-3, higher = more selective)
+            'wake_word_buffer_duration': 3.0,  # Rolling buffer duration in seconds
+            'wake_word_trigger_threshold': 2.0  # Minimum seconds of speech to trigger transcription
         }
         
         # Current settings
@@ -254,6 +260,21 @@ class AppSettings:
             'llm_model': self.get('llm_model')
         }
     
+    def get_wake_word_settings(self) -> Dict[str, Any]:
+        """
+        Get wake word detection settings
+        
+        Returns:
+            Dictionary of wake word settings
+        """
+        return {
+            'enabled': self.get('wake_word_enabled', False),
+            'phrase': self.get('wake_word_phrase', 'hey mike'),
+            'vad_aggressiveness': self.get('wake_word_vad_aggressiveness', 3),
+            'buffer_duration': self.get('wake_word_buffer_duration', 3.0),
+            'trigger_threshold': self.get('wake_word_trigger_threshold', 2.0)
+        }
+    
     def validate_settings(self) -> bool:
         """
         Validate current settings
@@ -277,12 +298,28 @@ class AppSettings:
                     return False
             
             # Validate boolean settings
-            boolean_settings = ['add_space_after', 'add_space_before', 'audio_feedback', 'notifications']
+            boolean_settings = ['add_space_after', 'add_space_before', 'audio_feedback', 'notifications', 'wake_word_enabled']
             for setting in boolean_settings:
                 value = self.get(setting)
                 if not isinstance(value, bool):
                     self.logger.warning(f"Invalid {setting}: {value}")
                     return False
+            
+            # Validate wake word settings
+            vad_aggressiveness = self.get('wake_word_vad_aggressiveness', 3)
+            if not isinstance(vad_aggressiveness, int) or not 0 <= vad_aggressiveness <= 3:
+                self.logger.warning(f"Invalid wake_word_vad_aggressiveness: {vad_aggressiveness}")
+                return False
+            
+            buffer_duration = self.get('wake_word_buffer_duration', 3.0)
+            if not isinstance(buffer_duration, (int, float)) or not 1.0 <= buffer_duration <= 5.0:
+                self.logger.warning(f"Invalid wake_word_buffer_duration: {buffer_duration}")
+                return False
+            
+            trigger_threshold = self.get('wake_word_trigger_threshold', 2.0)
+            if not isinstance(trigger_threshold, (int, float)) or trigger_threshold <= 0:
+                self.logger.warning(f"Invalid wake_word_trigger_threshold: {trigger_threshold}")
+                return False
             
             return True
             
